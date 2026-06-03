@@ -1,5 +1,75 @@
 import * as XLSX from 'xlsx';
 
+// Helper functions to calculate amounts (same as Dashboard/ExpenseEntry)
+const getAmount = (exp) => parseFloat(exp.totalAmount || exp.amount) || 0;
+const getPaidAmount = (exp) => {
+  if (exp.paidAmount !== undefined && exp.paidAmount !== null && exp.paidAmount !== '') {
+    return parseFloat(exp.paidAmount) || 0;
+  }
+  if (exp.paymentStatus === 'Clear' || exp.paymentStatus === 'Paid') {
+    return parseFloat(exp.totalAmount || exp.amount) || 0;
+  }
+  return 0;
+};
+const getRemainingAmount = (exp) => {
+  if (exp.remainingAmount !== undefined && exp.remainingAmount !== null && exp.remainingAmount !== '') {
+    return parseFloat(exp.remainingAmount) || 0;
+  }
+  const total = getAmount(exp);
+  const paid = getPaidAmount(exp);
+  return total - paid;
+};
+
+/**
+ * Apply styling to worksheet
+ */
+const applyWorksheetStyling = (worksheet, range) => {
+  const headerRange = XLSX.utils.decode_range(range);
+  
+  // Apply bold to header row
+  for (let col = headerRange.s.c; col <= headerRange.e.c; col++) {
+    const cellAddress = XLSX.utils.encode_cell({ r: 0, c: col });
+    if (!worksheet[cellAddress]) continue;
+    
+    worksheet[cellAddress].s = {
+      font: { bold: true },
+      fill: { fgColor: { rgb: "4472C4" } },
+      alignment: { horizontal: "center", vertical: "center" },
+      border: {
+        top: { style: "thin", color: { rgb: "000000" } },
+        bottom: { style: "thin", color: { rgb: "000000" } },
+        left: { style: "thin", color: { rgb: "000000" } },
+        right: { style: "thin", color: { rgb: "000000" } }
+      }
+    };
+  }
+  
+  // Apply borders to all cells
+  for (let row = headerRange.s.r; row <= headerRange.e.r; row++) {
+    for (let col = headerRange.s.c; col <= headerRange.e.c; col++) {
+      const cellAddress = XLSX.utils.encode_cell({ r: row, c: col });
+      if (!worksheet[cellAddress]) continue;
+      
+      if (!worksheet[cellAddress].s) worksheet[cellAddress].s = {};
+      worksheet[cellAddress].s.border = {
+        top: { style: "thin", color: { rgb: "000000" } },
+        bottom: { style: "thin", color: { rgb: "000000" } },
+        left: { style: "thin", color: { rgb: "000000" } },
+        right: { style: "thin", color: { rgb: "000000" } }
+      };
+    }
+  }
+  
+  // Set column widths
+  const colWidths = [];
+  for (let col = headerRange.s.c; col <= headerRange.e.c; col++) {
+    colWidths.push({ wch: 15 });
+  }
+  worksheet['!cols'] = colWidths;
+  
+  return worksheet;
+};
+
 /**
  * Export expenses to Excel file
  */
@@ -12,9 +82,14 @@ export const exportToExcel = (expenses, categories, vendors) => {
     Date: exp.date,
     Category: exp.category,
     'Sub-Category': exp.subCategory || '',
+    'Area/Floor': exp.area || '',
     Vendor: exp.vendor || '',
     Description: exp.description || '',
-    Amount: parseFloat(exp.amount) || 0,
+    Quantity: exp.quantity || '',
+    'Total Amount': getAmount(exp),
+    'Paid Amount': getPaidAmount(exp),
+    'Remaining Amount': getRemainingAmount(exp),
+    'Payment Status': exp.paymentStatus || '',
     'Payment Method': exp.paymentMethod || '',
     'Created At': exp.createdAt,
   }));
@@ -25,13 +100,22 @@ export const exportToExcel = (expenses, categories, vendors) => {
     Date: 'TOTAL',
     Category: '',
     'Sub-Category': '',
+    'Area/Floor': '',
     Vendor: '',
     Description: '',
-    Amount: expenses.reduce((sum, exp) => sum + (parseFloat(exp.amount) || 0), 0),
+    Quantity: '',
+    'Total Amount': expenses.reduce((sum, exp) => sum + getAmount(exp), 0),
+    'Paid Amount': expenses.reduce((sum, exp) => sum + getPaidAmount(exp), 0),
+    'Remaining Amount': expenses.reduce((sum, exp) => sum + getRemainingAmount(exp), 0),
+    'Payment Status': '',
     'Payment Method': '',
     'Created At': '',
   };
   XLSX.utils.sheet_add_json(ws1, [totalRow], { skipHeader: true, origin: -1 });
+  
+  // Apply styling
+  const range1 = ws1['!ref'];
+  applyWorksheetStyling(ws1, range1);
   
   XLSX.utils.book_append_sheet(wb, ws1, 'Expenses');
 
@@ -39,23 +123,26 @@ export const exportToExcel = (expenses, categories, vendors) => {
   const categoryTotals = {};
   expenses.forEach(exp => {
     const cat = exp.category || 'Uncategorized';
-    categoryTotals[cat] = (categoryTotals[cat] || 0) + (parseFloat(exp.amount) || 0);
+    categoryTotals[cat] = (categoryTotals[cat] || 0) + getAmount(exp);
   });
   
+  const grandTotal = expenses.reduce((sum, exp) => sum + getAmount(exp), 0);
   const categorySummary = Object.entries(categoryTotals).map(([category, total]) => ({
     Category: category,
     'Total Amount': total,
-    Percentage: ((total / expenses.reduce((sum, exp) => sum + (parseFloat(exp.amount) || 0), 0)) * 100).toFixed(2) + '%',
+    Percentage: ((total / grandTotal) * 100).toFixed(2) + '%',
   }));
   
   const ws2 = XLSX.utils.json_to_sheet(categorySummary);
+  const range2 = ws2['!ref'];
+  applyWorksheetStyling(ws2, range2);
   XLSX.utils.book_append_sheet(wb, ws2, 'Category Summary');
 
   // Sheet 3: Vendor Summary
   const vendorTotals = {};
   expenses.forEach(exp => {
     const vendor = exp.vendor || 'Unknown';
-    vendorTotals[vendor] = (vendorTotals[vendor] || 0) + (parseFloat(exp.amount) || 0);
+    vendorTotals[vendor] = (vendorTotals[vendor] || 0) + getAmount(exp);
   });
   
   const vendorSummary = Object.entries(vendorTotals)
@@ -67,6 +154,8 @@ export const exportToExcel = (expenses, categories, vendors) => {
     }));
   
   const ws3 = XLSX.utils.json_to_sheet(vendorSummary);
+  const range3 = ws3['!ref'];
+  applyWorksheetStyling(ws3, range3);
   XLSX.utils.book_append_sheet(wb, ws3, 'Vendor Summary');
 
   // Sheet 4: Monthly Trend
@@ -74,7 +163,7 @@ export const exportToExcel = (expenses, categories, vendors) => {
   expenses.forEach(exp => {
     const date = new Date(exp.date);
     const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
-    monthlyData[monthKey] = (monthlyData[monthKey] || 0) + (parseFloat(exp.amount) || 0);
+    monthlyData[monthKey] = (monthlyData[monthKey] || 0) + getAmount(exp);
   });
   
   const monthlyTrend = Object.entries(monthlyData)
@@ -85,6 +174,8 @@ export const exportToExcel = (expenses, categories, vendors) => {
     }));
   
   const ws4 = XLSX.utils.json_to_sheet(monthlyTrend);
+  const range4 = ws4['!ref'];
+  applyWorksheetStyling(ws4, range4);
   XLSX.utils.book_append_sheet(wb, ws4, 'Monthly Trend');
 
   // Sheet 5: Categories List
@@ -95,6 +186,8 @@ export const exportToExcel = (expenses, categories, vendors) => {
     'Sub-Categories': cat.subCategories.join(', '),
   }));
   const ws5 = XLSX.utils.json_to_sheet(categoryList);
+  const range5 = ws5['!ref'];
+  applyWorksheetStyling(ws5, range5);
   XLSX.utils.book_append_sheet(wb, ws5, 'Category List');
 
   // Sheet 6: Vendors List
@@ -105,6 +198,8 @@ export const exportToExcel = (expenses, categories, vendors) => {
     Notes: v.notes || '',
   }));
   const ws6 = XLSX.utils.json_to_sheet(vendorList);
+  const range6 = ws6['!ref'];
+  applyWorksheetStyling(ws6, range6);
   XLSX.utils.book_append_sheet(wb, ws6, 'Vendor List');
 
   // Generate filename with date
@@ -139,9 +234,14 @@ export const importFromExcel = (file) => {
             date: row.Date,
             category: row.Category || 'Miscellaneous',
             subCategory: row['Sub-Category'] || '',
+            area: row['Area/Floor'] || '',
             vendor: row.Vendor || '',
             description: row.Description || '',
-            amount: parseFloat(row.Amount) || 0,
+            quantity: row.Quantity || '',
+            totalAmount: parseFloat(row['Total Amount']) || parseFloat(row.Amount) || 0,
+            paidAmount: parseFloat(row['Paid Amount']) || 0,
+            remainingAmount: parseFloat(row['Remaining Amount']) || 0,
+            paymentStatus: row['Payment Status'] || 'Pending',
             paymentMethod: row['Payment Method'] || 'Cash',
           }));
         
@@ -181,23 +281,35 @@ export const downloadTemplate = () => {
       Date: new Date().toISOString().split('T')[0],
       Category: 'Materials',
       'Sub-Category': 'Cement',
+      'Area/Floor': 'Foundation',
       Vendor: 'ABC Suppliers',
       Description: '50 bags of cement',
-      Amount: 500,
+      Quantity: '50 bags',
+      'Total Amount': 500,
+      'Paid Amount': 300,
+      'Remaining Amount': 200,
+      'Payment Status': 'Pending',
       'Payment Method': 'Cash',
     },
     {
       Date: new Date().toISOString().split('T')[0],
       Category: 'Labor',
       'Sub-Category': 'Skilled',
+      'Area/Floor': 'Ground',
       Vendor: 'John Contractor',
       Description: 'Daily wage - 5 workers',
-      Amount: 750,
+      Quantity: '5 workers',
+      'Total Amount': 750,
+      'Paid Amount': 750,
+      'Remaining Amount': 0,
+      'Payment Status': 'Clear',
       'Payment Method': 'Bank Transfer',
     },
   ];
   
   const ws = XLSX.utils.json_to_sheet(sampleData);
+  const range = ws['!ref'];
+  applyWorksheetStyling(ws, range);
   XLSX.utils.book_append_sheet(wb, ws, 'Expenses');
   
   XLSX.writeFile(wb, 'Construction_Expense_Template.xlsx');
