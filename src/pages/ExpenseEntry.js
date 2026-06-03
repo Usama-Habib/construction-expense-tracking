@@ -1,0 +1,1255 @@
+import React, { useState } from 'react';
+import {
+  Container,
+  Paper,
+  Typography,
+  TextField,
+  Button,
+  Box,
+  Snackbar,
+  Alert,
+  Card,
+  CardContent,
+  CardActions,
+  Divider,
+  Stack,
+  Chip,
+  IconButton,
+  InputAdornment,
+  useTheme,
+  useMediaQuery,
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableRow,
+  ToggleButtonGroup,
+  ToggleButton,
+  Fab,
+  Select,
+  MenuItem,
+  FormControl,
+  InputLabel,
+} from '@mui/material';
+import DeleteIcon from '@mui/icons-material/Delete';
+import EditIcon from '@mui/icons-material/Edit';
+import AddIcon from '@mui/icons-material/Add';
+import CancelIcon from '@mui/icons-material/Cancel';
+import AttachMoneyIcon from '@mui/icons-material/AttachMoney';
+import ViewListIcon from '@mui/icons-material/ViewList';
+import ViewModuleIcon from '@mui/icons-material/ViewModule';
+import SearchIcon from '@mui/icons-material/Search';
+import FilterListIcon from '@mui/icons-material/FilterList';
+import SpeedIcon from '@mui/icons-material/Speed';
+import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
+import ExpandLessIcon from '@mui/icons-material/ExpandLess';
+import { useExpense } from '../contexts/ExpenseContext';
+
+const ExpenseEntry = () => {
+  const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
+  const { expenses, categories, paymentMethods, addExpense, updateExpense, deleteExpense } = useExpense();
+  
+  const [viewMode, setViewMode] = useState('table'); // 'table' or 'card'
+  const [showForm, setShowForm] = useState(false); // Hide form by default
+  const [showFilters, setShowFilters] = useState(!isMobile); // Auto-hide on mobile
+  const [quickAddMode, setQuickAddMode] = useState(false); // Quick add mode
+  const [formData, setFormData] = useState({
+    date: new Date().toISOString().split('T')[0],
+    category: '',
+    subCategory: '',
+    vendor: '',
+    description: '',
+    totalAmount: '',
+    paidAmount: '',
+    remainingAmount: '',
+    paymentMethod: '',
+    area: '',
+    paymentStatus: 'Clear',
+    notes: '',
+    quantity: '',
+    unit: '',
+  });
+
+  const [editingId, setEditingId] = useState(null);
+  const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' });
+  
+  // Filter state
+  const [filters, setFilters] = useState({
+    searchText: '',
+    category: '',
+    subCategory: '',
+    area: '',
+    dateFrom: '',
+    dateTo: '',
+  });
+
+  const selectedCategory = categories.find(cat => cat.name === formData.category);
+  const subCategories = selectedCategory?.subCategories || [];
+
+  // Helper to get amount (backward compatible)
+  const getAmount = (exp) => parseFloat(exp.totalAmount || exp.amount) || 0;
+  const getPaidAmount = (exp) => {
+    // Only return paidAmount if it exists, don't fallback to total
+    if (exp.paidAmount !== undefined && exp.paidAmount !== null && exp.paidAmount !== '') {
+      return parseFloat(exp.paidAmount) || 0;
+    }
+    // If paidAmount doesn't exist but paymentStatus is Clear/Paid, assume fully paid
+    if (exp.paymentStatus === 'Clear' || exp.paymentStatus === 'Paid') {
+      return parseFloat(exp.totalAmount || exp.amount) || 0;
+    }
+    return 0;
+  };
+  const getRemainingAmount = (exp) => {
+    if (exp.remainingAmount !== undefined && exp.remainingAmount !== null && exp.remainingAmount !== '') {
+      return parseFloat(exp.remainingAmount) || 0;
+    }
+    // Calculate remaining from total - paid
+    const total = getAmount(exp);
+    const paid = getPaidAmount(exp);
+    return Math.max(0, total - paid);
+  };
+
+  // Get status color
+  const getStatusColor = (status) => {
+    switch (status?.toLowerCase()) {
+      case 'clear':
+      case 'paid':
+        return { bg: '#e8f5e9', border: '#4caf50', text: '#2e7d32' };
+      case 'partial':
+        return { bg: '#fff9c4', border: '#fbc02d', text: '#f57c00' };
+      case 'pending':
+      case 'unpaid':
+        return { bg: '#ffebee', border: '#ef5350', text: '#c62828' };
+      default:
+        return { bg: '#f5f5f5', border: '#9e9e9e', text: '#616161' };
+    }
+  };
+
+  // Filter expenses based on all filter criteria
+  const filteredExpenses = expenses.filter(expense => {
+    // Search text filter (searches in description, notes, vendor, category, subcategory)
+    if (filters.searchText) {
+      const searchLower = filters.searchText.toLowerCase();
+      const matchesSearch = 
+        (expense.description?.toLowerCase().includes(searchLower)) ||
+        (expense.notes?.toLowerCase().includes(searchLower)) ||
+        (expense.vendor?.toLowerCase().includes(searchLower)) ||
+        (expense.category?.toLowerCase().includes(searchLower)) ||
+        (expense.subCategory?.toLowerCase().includes(searchLower));
+      if (!matchesSearch) return false;
+    }
+
+    // Category filter
+    if (filters.category && expense.category !== filters.category) {
+      return false;
+    }
+
+    // SubCategory filter
+    if (filters.subCategory && expense.subCategory !== filters.subCategory) {
+      return false;
+    }
+
+    // Area filter
+    if (filters.area && expense.area !== filters.area) {
+      return false;
+    }
+
+    // Date range filter
+    if (filters.dateFrom && expense.date < filters.dateFrom) {
+      return false;
+    }
+    if (filters.dateTo && expense.date > filters.dateTo) {
+      return false;
+    }
+
+    return true;
+  });
+
+  // Calculate summary for filtered results
+  const filterSummary = {
+    count: filteredExpenses.length,
+    totalAmount: filteredExpenses.reduce((sum, exp) => sum + getAmount(exp), 0),
+    totalPaid: filteredExpenses.reduce((sum, exp) => sum + getPaidAmount(exp), 0),
+    totalRemaining: filteredExpenses.reduce((sum, exp) => sum + getRemainingAmount(exp), 0),
+    totalQuantity: filteredExpenses.reduce((sum, exp) => {
+      const qty = parseFloat(exp.quantity) || 0;
+      return sum + qty;
+    }, 0),
+  };
+
+  // Get unique subcategories for the selected category in filter
+  const filterSelectedCategory = categories.find(cat => cat.name === filters.category);
+  const filterSubCategories = filterSelectedCategory?.subCategories || [];
+
+  // Clear all filters
+  const clearFilters = () => {
+    setFilters({
+      searchText: '',
+      category: '',
+      subCategory: '',
+      area: '',
+      dateFrom: '',
+      dateTo: '',
+    });
+  };
+
+  const handleFilterChange = (e) => {
+    const { name, value } = e.target;
+    setFilters(prev => ({
+      ...prev,
+      [name]: value,
+      ...(name === 'category' && { subCategory: '' }) // Reset subcategory when category changes
+    }));
+  };
+
+  const handleChange = (e) => {
+    const { name, value } = e.target;
+    setFormData(prev => ({
+      ...prev,
+      [name]: value,
+      ...(name === 'category' && { subCategory: '' })
+    }));
+  };
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    
+    if (!formData.date || !formData.category || !formData.totalAmount) {
+      setSnackbar({ open: true, message: 'Please fill Date, Category, and Amount', severity: 'error' });
+      return;
+    }
+
+    if (parseFloat(formData.totalAmount) <= 0) {
+      setSnackbar({ open: true, message: 'Amount must be greater than 0', severity: 'error' });
+      return;
+    }
+
+    if (editingId) {
+      updateExpense(editingId, formData);
+      setSnackbar({ open: true, message: '✓ Expense updated!', severity: 'success' });
+      setEditingId(null);
+    } else {
+      addExpense(formData);
+      setSnackbar({ open: true, message: '✓ Expense added!', severity: 'success' });
+    }
+
+    // Reset form and hide it
+    setFormData({
+      date: new Date().toISOString().split('T')[0],
+      category: '',
+      subCategory: '',
+      vendor: '',
+      description: '',
+      totalAmount: '',
+      paidAmount: '',
+      remainingAmount: '',
+      paymentMethod: '',
+      area: '',
+      paymentStatus: 'Clear',
+      notes: '',
+    });
+    setShowForm(false);
+    setQuickAddMode(false);
+  };
+
+  const handleEdit = (expense) => {
+    setFormData({
+      date: expense.date,
+      category: expense.category,
+      subCategory: expense.subCategory || '',
+      vendor: expense.vendor || '',
+      description: expense.description || '',
+      totalAmount: expense.totalAmount || expense.amount || '',
+      paidAmount: expense.paidAmount || expense.totalAmount || expense.amount || '',
+      remainingAmount: expense.remainingAmount || '',
+      paymentMethod: expense.paymentMethod || '',
+      area: expense.area || '',
+      paymentStatus: expense.paymentStatus || 'Clear',
+      notes: expense.notes || '',
+    });
+    setEditingId(expense.id);
+    setShowForm(true);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const handleDelete = (id) => {
+    if (window.confirm('Delete this expense?')) {
+      deleteExpense(id);
+      setSnackbar({ open: true, message: '✓ Deleted!', severity: 'success' });
+    }
+  };
+
+  const handleCancelEdit = () => {
+    setEditingId(null);
+    setShowForm(false);
+    setQuickAddMode(false);
+    setFormData({
+      date: new Date().toISOString().split('T')[0],
+      category: '',
+      subCategory: '',
+      vendor: '',
+      description: '',
+      totalAmount: '',
+      paidAmount: '',
+      remainingAmount: '',
+      paymentMethod: '',
+      area: '',
+      paymentStatus: 'Clear',
+      notes: '',
+    });
+  };
+
+  return (
+    <Container 
+      maxWidth="xl" 
+      sx={{ 
+        py: { xs: 2, sm: 3 },
+        px: { xs: 1, sm: 2 }
+      }}
+    >
+      {/* Entry Form (Collapsible) */}
+      {showForm && (
+        <Paper 
+          elevation={3}
+          sx={{ 
+            p: { xs: 2, sm: 3, md: 4 }, 
+            mb: 3,
+            borderRadius: 2,
+            border: '2px solid',
+            borderColor: 'primary.main'
+          }}
+        >
+          <Typography 
+            variant={isMobile ? "h5" : "h4"}
+            gutterBottom 
+            fontWeight="bold"
+            color="primary"
+            sx={{ mb: 3 }}
+          >
+            {editingId ? '✏️ Edit Expense' : quickAddMode ? '⚡ Quick Add Expense' : '➕ Add New Expense'}
+          </Typography>
+          
+          {quickAddMode && !editingId && (
+            <Alert severity="info" sx={{ mb: 2 }}>
+              Quick Add mode - Only essential fields shown. Click the blue + button for full form.
+            </Alert>
+          )}
+        
+        <form onSubmit={handleSubmit}>
+          <Stack spacing={3}>
+            {/* Date Field - Full Width on Mobile */}
+            <TextField
+              required
+              fullWidth
+              label="📅 Date"
+              name="date"
+              type="date"
+              value={formData.date}
+              onChange={handleChange}
+              InputLabelProps={{ shrink: true }}
+              inputProps={{ max: new Date().toISOString().split('T')[0] }}
+              sx={{
+                '& .MuiInputBase-root': {
+                  fontSize: { xs: '1rem', sm: '1rem' },
+                  height: { xs: '56px', sm: '56px' }
+                },
+                '& .MuiInputLabel-root': {
+                  fontSize: { xs: '1rem', sm: '1rem' },
+                  fontWeight: 500
+                }
+              }}
+            />
+
+            {/* Category Dropdown - Larger for mobile */}
+            <FormControl required fullWidth>
+              <InputLabel id="form-category-label">🏗️ Category</InputLabel>
+              <Select
+                labelId="form-category-label"
+                id="form-category"
+                name="category"
+                value={formData.category}
+                onChange={handleChange}
+                label="🏗️ Category"
+                sx={{
+                  fontSize: { xs: '1.1rem', sm: '1rem' },
+                  height: { xs: '56px', sm: '56px' }
+                }}
+              >
+                <MenuItem value="">Select Category</MenuItem>
+                {categories.map((cat) => (
+                  <MenuItem key={cat.id} value={cat.name}>
+                    {cat.icon} {cat.name}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+
+            {/* Sub-Category Dropdown */}
+            {formData.category && subCategories.length > 0 && (
+              <FormControl fullWidth>
+                <InputLabel id="form-subcategory-label">📋 Sub-Category</InputLabel>
+                <Select
+                  labelId="form-subcategory-label"
+                  id="form-subcategory"
+                  name="subCategory"
+                  value={formData.subCategory}
+                  onChange={handleChange}
+                  label="📋 Sub-Category"
+                  sx={{
+                    fontSize: { xs: '1.1rem', sm: '1rem' },
+                    height: { xs: '56px', sm: '56px' }
+                  }}
+                >
+                  <MenuItem value="">Select Sub-Category (Optional)</MenuItem>
+                  {subCategories.map((sub) => (
+                    <MenuItem key={sub} value={sub}>
+                      {sub}
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+            )}
+
+            {/* Total Amount - ALWAYS visible (required field) */}
+            <TextField
+              required
+              fullWidth
+              label="💰 Total Amount"
+              name="totalAmount"
+              type="number"
+              value={formData.totalAmount}
+              onChange={handleChange}
+              inputProps={{ min: 0, step: 0.01 }}
+              placeholder="0.00"
+              sx={{
+                '& .MuiInputBase-root': {
+                  fontSize: { xs: '1.2rem', sm: '1.1rem' },
+                  height: { xs: '60px', sm: '56px' },
+                  fontWeight: 600
+                },
+                '& .MuiInputLabel-root': {
+                  fontSize: { xs: '1.1rem', sm: '1rem' },
+                  fontWeight: 600
+                },
+                '& input': {
+                  textAlign: 'left',
+                  fontWeight: 600,
+                  color: theme.palette.primary.main
+                }
+              }}
+            />
+
+            {/* Quantity & Unit - ALWAYS visible (helpful for materials like cement, bricks) */}
+            <Box sx={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 2 }}>
+              <TextField
+                fullWidth
+                label="📦 Quantity"
+                name="quantity"
+                type="number"
+                value={formData.quantity}
+                onChange={handleChange}
+                inputProps={{ min: 0, step: 0.01 }}
+                placeholder="e.g., 50"
+                sx={{
+                  '& .MuiInputBase-root': {
+                    fontSize: { xs: '1rem', sm: '1rem' },
+                    height: { xs: '56px', sm: '56px' }
+                  }
+                }}
+              />
+              <TextField
+                fullWidth
+                label="📏 Unit"
+                name="unit"
+                value={formData.unit}
+                onChange={handleChange}
+                placeholder="e.g., bags, pcs"
+                sx={{
+                  '& .MuiInputBase-root': {
+                    fontSize: { xs: '1rem', sm: '1rem' },
+                    height: { xs: '56px', sm: '56px' }
+                  }
+                }}
+              />
+            </Box>
+
+            {/* Optional fields - hidden in Quick Add mode */}
+            {(!quickAddMode || editingId) && (
+            <>
+            {/* Vendor Field */}
+            <TextField
+              fullWidth
+              label="🏪 Vendor/Supplier"
+              name="vendor"
+              value={formData.vendor}
+              onChange={handleChange}
+              placeholder="e.g., ABC Suppliers"
+              sx={{
+                '& .MuiInputBase-root': {
+                  fontSize: { xs: '1rem', sm: '1rem' },
+                  height: { xs: '56px', sm: '56px' }
+                },
+                '& .MuiInputLabel-root': {
+                  fontSize: { xs: '1rem', sm: '1rem' },
+                  fontWeight: 500
+                }
+              }}
+            />
+
+            {/* Description Field */}
+            <TextField
+              fullWidth
+              label="📝 Description"
+              name="description"
+              value={formData.description}
+              onChange={handleChange}
+              multiline
+              rows={2}
+              placeholder="Brief description..."
+              sx={{
+                '& .MuiInputBase-root': {
+                  fontSize: { xs: '1rem', sm: '1rem' },
+                },
+                '& .MuiInputLabel-root': {
+                  fontSize: { xs: '1rem', sm: '1rem' },
+                  fontWeight: 500
+                }
+              }}
+            />
+
+            {/* Paid Amount */}
+            <TextField
+              fullWidth
+              label="✅ Paid Amount"
+              name="paidAmount"
+              type="number"
+              value={formData.paidAmount}
+              onChange={handleChange}
+              inputProps={{ min: 0, step: 0.01 }}
+              placeholder="0.00"
+              sx={{
+                '& .MuiInputBase-root': {
+                  fontSize: { xs: '1rem', sm: '1rem' },
+                  height: { xs: '56px', sm: '56px' }
+                }
+              }}
+            />
+
+            {/* Remaining Amount */}
+            <TextField
+              fullWidth
+              label="⏳ Remaining Amount"
+              name="remainingAmount"
+              type="number"
+              value={formData.remainingAmount}
+              onChange={handleChange}
+              inputProps={{ min: 0, step: 0.01 }}
+              placeholder="0.00"
+              sx={{
+                '& .MuiInputBase-root': {
+                  fontSize: { xs: '1rem', sm: '1rem' },
+                  height: { xs: '56px', sm: '56px' }
+                }
+              }}
+            />
+
+            {/* Payment Method */}
+            <FormControl fullWidth>
+              <InputLabel id="form-payment-method-label">💳 Payment Method</InputLabel>
+              <Select
+                labelId="form-payment-method-label"
+                id="form-payment-method"
+                name="paymentMethod"
+                value={formData.paymentMethod}
+                onChange={handleChange}
+                label="💳 Payment Method"
+                sx={{
+                  fontSize: { xs: '1.1rem', sm: '1rem' },
+                  height: { xs: '56px', sm: '56px' }
+                }}
+              >
+                <MenuItem value="">Select Payment Method</MenuItem>
+                {paymentMethods.map((method) => (
+                  <MenuItem key={method} value={method}>
+                    {method}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+
+            {/* Area/Floor Selection */}
+            <FormControl fullWidth>
+              <InputLabel id="form-area-label">🏢 Area/Floor</InputLabel>
+              <Select
+                labelId="form-area-label"
+                id="form-area"
+                name="area"
+                value={formData.area}
+                onChange={handleChange}
+                label="🏢 Area/Floor"
+                sx={{
+                  fontSize: { xs: '1.1rem', sm: '1rem' },
+                  height: { xs: '56px', sm: '56px' }
+                }}
+              >
+                <MenuItem value="">Select Area/Floor</MenuItem>
+                <MenuItem value="Foundation">🏗️ Foundation</MenuItem>
+                <MenuItem value="Ground Floor">🏠 Ground Floor</MenuItem>
+                <MenuItem value="First Floor">1️⃣ First Floor</MenuItem>
+                <MenuItem value="Second Floor">2️⃣ Second Floor</MenuItem>
+                <MenuItem value="Third Floor">3️⃣ Third Floor</MenuItem>
+                <MenuItem value="Roof/Top">🔝 Roof/Top</MenuItem>
+                <MenuItem value="General">📦 General</MenuItem>
+              </Select>
+            </FormControl>
+
+            {/* Payment Status */}
+            <FormControl fullWidth>
+              <InputLabel id="form-payment-status-label">✅ Payment Status</InputLabel>
+              <Select
+                labelId="form-payment-status-label"
+                id="form-payment-status"
+                name="paymentStatus"
+                value={formData.paymentStatus}
+                onChange={handleChange}
+                label="✅ Payment Status"
+                sx={{
+                  fontSize: { xs: '1.1rem', sm: '1rem' },
+                  height: { xs: '56px', sm: '56px' }
+                }}
+              >
+                <MenuItem value="Clear">✅ Clear</MenuItem>
+                <MenuItem value="Partial">⚠️ Partial</MenuItem>
+                <MenuItem value="Pending">⏳ Pending</MenuItem>
+              </Select>
+            </FormControl>
+
+            {/* Notes */}
+            <TextField
+              fullWidth
+              label="📝 Notes"
+              name="notes"
+              value={formData.notes}
+              onChange={handleChange}
+              multiline
+              rows={2}
+              placeholder="Additional notes..."
+              sx={{
+                '& .MuiInputBase-root': {
+                  fontSize: { xs: '1rem', sm: '1rem' },
+                }
+              }}
+            />
+            </>
+            )}
+
+            {/* Action Buttons - Full width on mobile */}
+            <Box sx={{ display: 'flex', gap: 2, flexDirection: { xs: 'column', sm: 'row' } }}>
+              <Button
+                type="submit"
+                variant="contained"
+                size="large"
+                fullWidth={isMobile}
+                startIcon={editingId ? <EditIcon /> : <AddIcon />}
+                sx={{
+                  py: { xs: 1.5, sm: 1.2 },
+                  fontSize: { xs: '1.1rem', sm: '1rem' },
+                  fontWeight: 600,
+                  borderRadius: 2,
+                  textTransform: 'none',
+                  boxShadow: 3
+                }}
+              >
+                {editingId ? 'Update Expense' : 'Add Expense'}
+              </Button>
+              <Button
+                variant="outlined"
+                size="large"
+                fullWidth={isMobile}
+                onClick={handleCancelEdit}
+                startIcon={<CancelIcon />}
+                sx={{
+                  py: { xs: 1.5, sm: 1.2 },
+                  fontSize: { xs: '1.1rem', sm: '1rem' },
+                  fontWeight: 600,
+                  borderRadius: 2,
+                  textTransform: 'none'
+                }}
+              >
+                Cancel
+              </Button>
+            </Box>
+          </Stack>
+        </form>
+      </Paper>
+      )}
+
+      {/* Expenses List */}
+      <Paper 
+        elevation={3}
+        sx={{ 
+          p: { xs: 2, sm: 3 },
+          borderRadius: 2
+        }}
+      >
+        {/* Filter Panel */}
+        <Box sx={{ mb: 3 }}>
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+            <Typography variant="h6" fontWeight="bold" color="primary">
+              🔍 Filter & Search
+            </Typography>
+            <Button
+              size="small"
+              onClick={() => setShowFilters(!showFilters)}
+              startIcon={showFilters ? <ExpandLessIcon /> : <ExpandMoreIcon />}
+              sx={{ textTransform: 'none' }}
+            >
+              {showFilters ? 'Hide Filters' : 'Show Filters'}
+            </Button>
+          </Box>
+          
+          {/* Filter Controls - Collapsible */}
+          {showFilters && (
+          <>
+          {/* Filter Controls */}
+          <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr', md: '2fr 1fr 1fr 1fr' }, gap: 2, mb: 2 }}>
+            {/* Search Text */}
+            <TextField
+              size="small"
+              label="Search"
+              name="searchText"
+              value={filters.searchText}
+              onChange={handleFilterChange}
+              placeholder="Search description, vendor, category..."
+              sx={{ gridColumn: { xs: '1', md: 'span 1' } }}
+              InputProps={{
+                startAdornment: (
+                  <InputAdornment position="start">
+                    <SearchIcon fontSize="small" />
+                  </InputAdornment>
+                ),
+              }}
+            />
+            
+            {/* Category Filter */}
+            <FormControl size="small" fullWidth>
+              <InputLabel id="filter-category-label">Category</InputLabel>
+              <Select
+                labelId="filter-category-label"
+                id="filter-category"
+                name="category"
+                value={filters.category}
+                onChange={handleFilterChange}
+                label="Category"
+              >
+                <MenuItem value="">All Categories</MenuItem>
+                {categories.map(cat => (
+                  <MenuItem key={cat.name} value={cat.name}>{cat.icon} {cat.name}</MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+            
+            {/* SubCategory Filter */}
+            <FormControl size="small" fullWidth disabled={!filters.category}>
+              <InputLabel id="filter-subcategory-label">Sub-Category</InputLabel>
+              <Select
+                labelId="filter-subcategory-label"
+                id="filter-subcategory"
+                name="subCategory"
+                value={filters.subCategory}
+                onChange={handleFilterChange}
+                label="Sub-Category"
+              >
+                <MenuItem value="">All Sub-Categories</MenuItem>
+                {filterSubCategories.map(sub => (
+                  <MenuItem key={sub} value={sub}>{sub}</MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+            
+            {/* Area Filter */}
+            <FormControl size="small" fullWidth>
+              <InputLabel id="filter-area-label">Area/Floor</InputLabel>
+              <Select
+                labelId="filter-area-label"
+                id="filter-area"
+                name="area"
+                value={filters.area}
+                onChange={handleFilterChange}
+                label="Area/Floor"
+              >
+                <MenuItem value="">All Areas</MenuItem>
+                <MenuItem value="Foundation">🏗️ Foundation</MenuItem>
+                <MenuItem value="Ground Floor">🏠 Ground Floor</MenuItem>
+                <MenuItem value="First Floor">1️⃣ First Floor</MenuItem>
+                <MenuItem value="Second Floor">2️⃣ Second Floor</MenuItem>
+                <MenuItem value="Third Floor">3️⃣ Third Floor</MenuItem>
+                <MenuItem value="Roof/Top">🔝 Roof/Top</MenuItem>
+                <MenuItem value="General">📦 General</MenuItem>
+              </Select>
+            </FormControl>
+          </Box>
+
+          {/* Date Range Filters */}
+          <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr 1fr' }, gap: 2, mb: 2 }}>
+            <TextField
+              size="small"
+              type="date"
+              label="From Date"
+              name="dateFrom"
+              value={filters.dateFrom}
+              onChange={handleFilterChange}
+              InputLabelProps={{ shrink: true }}
+              sx={{
+                '& input[type="date"]::-webkit-datetime-edit': {
+                  color: filters.dateFrom ? 'inherit' : 'transparent',
+                },
+                '& input[type="date"]:focus::-webkit-datetime-edit': {
+                  color: 'inherit',
+                },
+              }}
+            />
+            <TextField
+              size="small"
+              type="date"
+              label="To Date"
+              name="dateTo"
+              value={filters.dateTo}
+              onChange={handleFilterChange}
+              InputLabelProps={{ shrink: true }}
+              sx={{
+                '& input[type="date"]::-webkit-datetime-edit': {
+                  color: filters.dateTo ? 'inherit' : 'transparent',
+                },
+                '& input[type="date"]:focus::-webkit-datetime-edit': {
+                  color: 'inherit',
+                },
+              }}
+            />
+            <Button
+              variant="outlined"
+              onClick={clearFilters}
+              sx={{ textTransform: 'none' }}
+            >
+              Clear Filters
+            </Button>
+          </Box>
+
+          {/* Filter Summary */}
+          {filteredExpenses.length > 0 && (
+            <Box 
+              sx={{ 
+                display: 'grid', 
+                gridTemplateColumns: { xs: '1fr 1fr', sm: '1fr 1fr 1fr 1fr', md: '1fr 1fr 1fr 1fr 1fr' },
+                gap: 2,
+                p: 2,
+                bgcolor: 'primary.lighter',
+                borderRadius: 2,
+                border: '1px solid',
+                borderColor: 'primary.main'
+              }}
+            >
+              <Box>
+                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', fontSize: '0.7rem' }}>
+                  Records Found
+                </Typography>
+                <Typography variant="h6" fontWeight="bold" color="primary">
+                  {filterSummary.count}
+                </Typography>
+              </Box>
+              <Box>
+                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', fontSize: '0.7rem' }}>
+                  Total Amount
+                </Typography>
+                <Typography variant="h6" fontWeight="bold" color="primary.main">
+                  {filterSummary.totalAmount.toLocaleString()}
+                </Typography>
+                <Typography variant="caption" color="text.secondary">PKR</Typography>
+              </Box>
+              <Box>
+                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', fontSize: '0.7rem' }}>
+                  Total Paid
+                </Typography>
+                <Typography variant="h6" fontWeight="bold" color="success.main">
+                  {filterSummary.totalPaid.toLocaleString()}
+                </Typography>
+                <Typography variant="caption" color="text.secondary">PKR</Typography>
+              </Box>
+              <Box>
+                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', fontSize: '0.7rem' }}>
+                  Remaining
+                </Typography>
+                <Typography variant="h6" fontWeight="bold" color="warning.main">
+                  {filterSummary.totalRemaining.toLocaleString()}
+                </Typography>
+                <Typography variant="caption" color="text.secondary">PKR</Typography>
+              </Box>
+              {filterSummary.totalQuantity > 0 && (
+                <Box>
+                  <Typography variant="caption" color="text.secondary" sx={{ display: 'block', fontSize: '0.7rem' }}>
+                    Total Quantity
+                  </Typography>
+                  <Typography variant="h6" fontWeight="bold" color="info.main">
+                    {filterSummary.totalQuantity.toLocaleString()}
+                  </Typography>
+                  <Typography variant="caption" color="text.secondary">units</Typography>
+                </Box>
+              )}
+            </Box>
+          )}
+          </>
+          )}
+        </Box>
+
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2, flexWrap: 'wrap', gap: 2 }}>
+          <Typography 
+            variant={isMobile ? "h5" : "h4"}
+            fontWeight="bold"
+            color="primary"
+          >
+            📊 {filteredExpenses.length > 0 ? `Filtered Expenses (${filteredExpenses.length})` : `All Expenses (${expenses.length})`}
+          </Typography>
+          
+          {!isMobile && filteredExpenses.length > 0 && (
+            <ToggleButtonGroup
+              value={viewMode}
+              exclusive
+              onChange={(e, newMode) => newMode && setViewMode(newMode)}
+              size="small"
+            >
+              <ToggleButton value="table">
+                <ViewListIcon sx={{ mr: 0.5 }} fontSize="small" /> Table
+              </ToggleButton>
+              <ToggleButton value="card">
+                <ViewModuleIcon sx={{ mr: 0.5 }} fontSize="small" /> Cards
+              </ToggleButton>
+            </ToggleButtonGroup>
+          )}
+        </Box>
+        
+        {filteredExpenses.length === 0 ? (
+          <Box 
+            sx={{ 
+              py: 6, 
+              textAlign: 'center',
+              bgcolor: 'grey.50',
+              borderRadius: 2
+            }}
+          >
+            <Typography variant="h6" color="text.secondary">
+              {expenses.length === 0 ? 'No expenses yet' : 'No expenses match your filters'}
+            </Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+              {expenses.length === 0 ? 'Click "Add New Expense" button above to get started 👆' : 'Try adjusting your filters or clear them to see all expenses'}
+            </Typography>
+          </Box>
+        ) : (isMobile || viewMode === 'card') ? (
+          // CARD VIEW with Color-Coded Cards (Mobile-first or when card view selected)
+          <Stack spacing={1.5} sx={{ mt: 2, maxHeight: 'calc(100vh - 250px)', overflowY: 'auto' }}>
+            {filteredExpenses.map((expense) => {
+              const categoryInfo = categories.find(c => c.name === expense.category);
+              const statusColors = getStatusColor(expense.paymentStatus);
+              const totalAmt = getAmount(expense);
+              const paidAmt = getPaidAmount(expense);
+              const remainingAmt = getRemainingAmount(expense);
+              
+              return (
+                <Card 
+                  key={expense.id}
+                  elevation={2}
+                  sx={{ 
+                    borderLeft: `5px solid ${statusColors.border}`,
+                    bgcolor: statusColors.bg,
+                    transition: 'all 0.2s',
+                    '&:hover': {
+                      boxShadow: 6,
+                      transform: 'translateY(-2px)'
+                    }
+                  }}
+                >
+                  <CardContent sx={{ p: 2 }}>
+                    {/* Top Row: Date and Category */}
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1.5 }}>
+                      <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.8rem', fontWeight: 500 }}>
+                        📅 {new Date(expense.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                      </Typography>
+                      <Chip 
+                        label={expense.category}
+                        size="small"
+                        sx={{ 
+                          bgcolor: categoryInfo?.color + '40',
+                          color: categoryInfo?.color,
+                          fontWeight: 600,
+                          fontSize: '0.75rem',
+                          height: '24px'
+                        }}
+                      />
+                    </Box>
+
+                    {/* Amount Row */}
+                    <Box sx={{ mb: 1.5 }}>
+                      <Typography variant="h5" fontWeight="bold" color="primary" sx={{ mb: 0.5 }}>
+                        {totalAmt.toLocaleString()} PKR
+                      </Typography>
+                      <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
+                        <Typography variant="body2" sx={{ color: 'success.main', fontWeight: 600, fontSize: '0.85rem' }}>
+                          ✅ Paid: {paidAmt.toLocaleString()}
+                        </Typography>
+                        {remainingAmt > 0 && (
+                          <Typography variant="body2" sx={{ color: 'error.main', fontWeight: 600, fontSize: '0.85rem' }}>
+                            ⏳ Remaining: {remainingAmt.toLocaleString()}
+                          </Typography>
+                        )}
+                      </Box>
+                    </Box>
+
+                    {/* Details Grid */}
+                    <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 1, mb: 1.5 }}>
+                      {expense.subCategory && (
+                        <Box>
+                          <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.7rem' }}>
+                            Sub-Category
+                          </Typography>
+                          <Typography variant="body2" sx={{ fontSize: '0.85rem', fontWeight: 500 }}>
+                            {expense.subCategory}
+                          </Typography>
+                        </Box>
+                      )}
+                      {expense.quantity && (
+                        <Box>
+                          <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.7rem' }}>
+                            Quantity
+                          </Typography>
+                          <Typography variant="body2" sx={{ fontSize: '0.85rem', fontWeight: 500 }}>
+                            📦 {expense.quantity}{expense.unit ? ' ' + expense.unit : ''}
+                          </Typography>
+                        </Box>
+                      )}
+                      {expense.area && (
+                        <Box>
+                          <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.7rem' }}>
+                            Area/Floor
+                          </Typography>
+                          <Typography variant="body2" sx={{ fontSize: '0.85rem', fontWeight: 500 }}>
+                            🏗️ {expense.area}
+                          </Typography>
+                        </Box>
+                      )}
+                    </Box>
+
+                    {/* Description */}
+                    {(expense.description || expense.notes) && (
+                      <Typography 
+                        variant="body2" 
+                        color="text.secondary" 
+                        sx={{ 
+                          fontSize: '0.85rem',
+                          mb: 1.5,
+                          fontStyle: 'italic',
+                          display: '-webkit-box',
+                          WebkitLineClamp: 2,
+                          WebkitBoxOrient: 'vertical',
+                          overflow: 'hidden'
+                        }}
+                      >
+                        {expense.description || expense.notes}
+                      </Typography>
+                    )}
+
+                    {/* Action Buttons */}
+                    <Box sx={{ display: 'flex', gap: 1, justifyContent: 'flex-end' }}>
+                      <Button
+                        size="small"
+                        variant="outlined"
+                        color="primary"
+                        startIcon={<EditIcon />}
+                        onClick={() => handleEdit(expense)}
+                        sx={{ textTransform: 'none', fontSize: '0.8rem' }}
+                      >
+                        Edit
+                      </Button>
+                      <Button
+                        size="small"
+                        variant="outlined"
+                        color="error"
+                        startIcon={<DeleteIcon />}
+                        onClick={() => handleDelete(expense.id)}
+                        sx={{ textTransform: 'none', fontSize: '0.8rem' }}
+                      >
+                        Delete
+                      </Button>
+                    </Box>
+                  </CardContent>
+                </Card>
+              );
+            })}
+          </Stack>
+        ) : (
+          // TABLE VIEW with Color-Coded Rows (Desktop only)
+          <TableContainer sx={{ maxHeight: 'calc(100vh - 250px)', overflowX: 'auto' }}>
+            <Table stickyHeader size="small">
+              <TableHead>
+                <TableRow>
+                  <TableCell sx={{ fontWeight: 'bold', bgcolor: 'primary.main', color: 'white', fontSize: '0.9rem' }}>Date</TableCell>
+                  <TableCell sx={{ fontWeight: 'bold', bgcolor: 'primary.main', color: 'white', fontSize: '0.9rem' }}>Category</TableCell>
+                  <TableCell sx={{ fontWeight: 'bold', bgcolor: 'primary.main', color: 'white', fontSize: '0.9rem' }}>Sub-Category</TableCell>
+                  <TableCell sx={{ fontWeight: 'bold', bgcolor: 'primary.main', color: 'white', fontSize: '0.9rem' }}>Quantity</TableCell>
+                  <TableCell sx={{ fontWeight: 'bold', bgcolor: 'primary.main', color: 'white', fontSize: '0.9rem' }}>Total</TableCell>
+                  <TableCell sx={{ fontWeight: 'bold', bgcolor: 'primary.main', color: 'white', fontSize: '0.9rem' }}>Paid</TableCell>
+                  <TableCell sx={{ fontWeight: 'bold', bgcolor: 'primary.main', color: 'white', fontSize: '0.9rem' }}>Remaining</TableCell>
+                  <TableCell sx={{ fontWeight: 'bold', bgcolor: 'primary.main', color: 'white', fontSize: '0.9rem' }}>Area</TableCell>
+                  <TableCell sx={{ fontWeight: 'bold', bgcolor: 'primary.main', color: 'white', fontSize: '0.9rem' }}>Description</TableCell>
+                  <TableCell sx={{ fontWeight: 'bold', bgcolor: 'primary.main', color: 'white', fontSize: '0.9rem', textAlign: 'center' }}>Actions</TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {filteredExpenses.map((expense) => {
+                  const categoryInfo = categories.find(c => c.name === expense.category);
+                  const statusColors = getStatusColor(expense.paymentStatus);
+                  const totalAmt = getAmount(expense);
+                  const paidAmt = getPaidAmount(expense);
+                  const remainingAmt = getRemainingAmount(expense);
+                  
+                  return (
+                    <TableRow 
+                      key={expense.id}
+                      sx={{ 
+                        '&:hover': { bgcolor: 'action.hover' },
+                        bgcolor: statusColors.bg,
+                        borderLeft: `5px solid ${statusColors.border}`
+                      }}
+                    >
+                      <TableCell sx={{ fontSize: '0.85rem', fontWeight: 500 }}>
+                        {new Date(expense.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: '2-digit' })}
+                      </TableCell>
+                      <TableCell>
+                        <Chip 
+                          label={expense.category}
+                          size="small"
+                          sx={{ 
+                            bgcolor: categoryInfo?.color + '40',
+                            color: categoryInfo?.color,
+                            fontWeight: 600,
+                            fontSize: '0.75rem'
+                          }}
+                        />
+                      </TableCell>
+                      <TableCell sx={{ fontSize: '0.8rem' }}>
+                        {expense.subCategory || '-'}
+                      </TableCell>
+                      <TableCell sx={{ fontSize: '0.8rem', fontWeight: 500 }}>
+                        {expense.quantity ? `${expense.quantity}${expense.unit ? ' ' + expense.unit : ''}` : '-'}
+                      </TableCell>
+                      <TableCell sx={{ fontWeight: 700, color: 'primary.main', fontSize: '0.95rem' }}>
+                        {totalAmt.toLocaleString()}
+                      </TableCell>
+                      <TableCell sx={{ fontWeight: 600, color: 'success.main', fontSize: '0.9rem' }}>
+                        {paidAmt.toLocaleString()}
+                      </TableCell>
+                      <TableCell sx={{ fontWeight: 600, color: 'warning.main', fontSize: '0.9rem' }}>
+                        {remainingAmt.toLocaleString()}
+                      </TableCell>
+                      <TableCell sx={{ fontSize: '0.8rem' }}>
+                        {expense.area || '-'}
+                      </TableCell>
+                      <TableCell sx={{ fontSize: '0.8rem', maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {expense.description || expense.notes || '-'}
+                      </TableCell>
+                      <TableCell sx={{ textAlign: 'center' }}>
+                        <IconButton size="small" color="primary" onClick={() => handleEdit(expense)}>
+                          <EditIcon fontSize="small" />
+                        </IconButton>
+                        <IconButton size="small" color="error" onClick={() => handleDelete(expense.id)}>
+                          <DeleteIcon fontSize="small" />
+                        </IconButton>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          </TableContainer>
+        )}
+      </Paper>
+
+      {/* Floating Action Buttons - Only show when form is hidden */}
+      {!showForm && (
+        <>
+          {/* Quick Add Button - Same size as main button */}
+          <Fab
+            color="secondary"
+            aria-label="quick add expense"
+            onClick={() => {
+              setQuickAddMode(true);
+              setShowForm(true);
+            }}
+            sx={{
+              position: 'fixed',
+              bottom: { xs: 152, sm: 102 },
+              right: { xs: 16, sm: 24 },
+              width: { xs: 64, sm: 72 },
+              height: { xs: 64, sm: 72 },
+              boxShadow: 4,
+              '&:hover': {
+                boxShadow: 8,
+                transform: 'scale(1.05)',
+                transition: 'all 0.3s'
+              }
+            }}
+          >
+            <SpeedIcon sx={{ fontSize: { xs: 32, sm: 36 } }} />
+          </Fab>
+          
+          {/* Main Add Expense Button */}
+          <Fab
+            color="primary"
+            aria-label="add expense"
+            onClick={() => {
+              setQuickAddMode(false);
+              setShowForm(true);
+            }}
+            sx={{
+              position: 'fixed',
+              bottom: { xs: 80, sm: 24 },
+              right: { xs: 16, sm: 24 },
+              width: { xs: 64, sm: 72 },
+              height: { xs: 64, sm: 72 },
+              background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+              boxShadow: 6,
+              '&:hover': {
+                boxShadow: 12,
+                transform: 'scale(1.1)',
+                transition: 'all 0.3s'
+              },
+              '&:active': {
+                transform: 'scale(0.95)'
+              }
+            }}
+          >
+            <AddIcon sx={{ fontSize: { xs: 32, sm: 36 } }} />
+          </Fab>
+        </>
+      )}
+
+      {/* Snackbar for notifications */}
+      <Snackbar
+        open={snackbar.open}
+        autoHideDuration={3000}
+        onClose={() => setSnackbar({ ...snackbar, open: false })}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+      >
+        <Alert 
+          onClose={() => setSnackbar({ ...snackbar, open: false })} 
+          severity={snackbar.severity}
+          sx={{ width: '100%', fontSize: '1rem' }}
+        >
+          {snackbar.message}
+        </Alert>
+      </Snackbar>
+    </Container>
+  );
+};
+
+export default ExpenseEntry;
