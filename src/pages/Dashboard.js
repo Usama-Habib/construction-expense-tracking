@@ -1,17 +1,17 @@
 import React, { useState } from 'react';
 import {
-  Container,
   Grid,
   Paper,
   Typography,
   Box,
   Card,
   CardContent,
-  ToggleButtonGroup,
-  ToggleButton,
-  Stack,
   useTheme,
   useMediaQuery,
+  MenuItem,
+  Select,
+  FormControl,
+  InputLabel,
 } from '@mui/material';
 import {
   PieChart,
@@ -19,37 +19,37 @@ import {
   Cell,
   BarChart,
   Bar,
-  LineChart,
-  Line,
   XAxis,
   YAxis,
   CartesianGrid,
   Tooltip,
   Legend,
   ResponsiveContainer,
+  AreaChart,
+  Area,
 } from 'recharts';
 import { useExpense } from '../contexts/ExpenseContext';
 import TrendingUpIcon from '@mui/icons-material/TrendingUp';
 import AccountBalanceWalletIcon from '@mui/icons-material/AccountBalanceWallet';
 import ReceiptIcon from '@mui/icons-material/Receipt';
-import CalendarMonthIcon from '@mui/icons-material/CalendarMonth';
+import MoneyOffIcon from '@mui/icons-material/MoneyOff';
+import ConstructionIcon from '@mui/icons-material/Construction';
+import CategoryIcon from '@mui/icons-material/Category';
 
 const Dashboard = () => {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
-  const { expenses, categories, getExpensesByCategory, getExpensesByVendor, getMonthlyTrend } = useExpense();
+  const { expenses } = useExpense();
   const [timeRange, setTimeRange] = useState('all');
   const [areaFilter, setAreaFilter] = useState('all');
   const [paymentStatusFilter, setPaymentStatusFilter] = useState('all');
 
-  // Helper to get amount (backward compatible)
+  // Helper functions
   const getAmount = (exp) => parseFloat(exp.totalAmount || exp.amount) || 0;
   const getPaidAmount = (exp) => {
-    // Only return paidAmount if it exists, don't fallback to total
     if (exp.paidAmount !== undefined && exp.paidAmount !== null && exp.paidAmount !== '') {
       return parseFloat(exp.paidAmount) || 0;
     }
-    // If paidAmount doesn't exist but paymentStatus is Clear/Paid, assume fully paid
     if (exp.paymentStatus === 'Clear' || exp.paymentStatus === 'Paid') {
       return parseFloat(exp.totalAmount || exp.amount) || 0;
     }
@@ -59,13 +59,12 @@ const Dashboard = () => {
     if (exp.remainingAmount !== undefined && exp.remainingAmount !== null && exp.remainingAmount !== '') {
       return parseFloat(exp.remainingAmount) || 0;
     }
-    // Calculate remaining from total - paid
     const total = getAmount(exp);
     const paid = getPaidAmount(exp);
     return Math.max(0, total - paid);
   };
 
-  // Filter expenses based on time range, area, and payment status
+  // Filter expenses based on filters
   const getFilteredExpenses = () => {
     const now = new Date();
     const filtered = expenses.filter(exp => {
@@ -80,6 +79,11 @@ const Dashboard = () => {
           break;
         case 'month':
           timeMatch = expDate.getMonth() === now.getMonth() && expDate.getFullYear() === now.getFullYear();
+          break;
+        case 'quarter':
+          const currentQuarter = Math.floor(now.getMonth() / 3);
+          const expQuarter = Math.floor(expDate.getMonth() / 3);
+          timeMatch = expQuarter === currentQuarter && expDate.getFullYear() === now.getFullYear();
           break;
         case 'year':
           timeMatch = expDate.getFullYear() === now.getFullYear();
@@ -100,311 +104,347 @@ const Dashboard = () => {
   };
 
   const filteredExpenses = getFilteredExpenses();
+  
+  // KPI Calculations
   const totalExpenses = filteredExpenses.reduce((sum, exp) => sum + getAmount(exp), 0);
   const totalPaid = filteredExpenses.reduce((sum, exp) => sum + getPaidAmount(exp), 0);
   const totalRemaining = filteredExpenses.reduce((sum, exp) => sum + getRemainingAmount(exp), 0);
+  const transactionCount = filteredExpenses.length;
+  
+  // Contractor Cost (Paid to contractor)
+  const contractorCost = filteredExpenses
+    .filter(exp => exp.category === 'Contractor')
+    .reduce((sum, exp) => sum + getPaidAmount(exp), 0);
+  
+  // Material Cost
+  const materialCost = filteredExpenses
+    .filter(exp => exp.category === 'Material')
+    .reduce((sum, exp) => sum + getAmount(exp), 0);
 
-  // Category breakdown for pie chart
-  const categoryData = Object.entries(getExpensesByCategory()).map(([name, value]) => ({
-    name,
-    value,
-  })).sort((a, b) => b.value - a.value);
+  // Material Cost Breakdown (by subcategory)
+  const materialBreakdown = {};
+  filteredExpenses
+    .filter(exp => exp.category === 'Material')
+    .forEach(exp => {
+      const subCat = exp.subCategory || 'Others';
+      materialBreakdown[subCat] = (materialBreakdown[subCat] || 0) + getAmount(exp);
+    });
+  
+  const materialData = Object.entries(materialBreakdown)
+    .map(([name, value]) => ({ name, value }))
+    .sort((a, b) => b.value - a.value);
 
-  // Vendor breakdown for bar chart
-  const vendorData = Object.entries(getExpensesByVendor())
-    .map(([name, value]) => ({ name: name || 'Unknown', value }))
-    .sort((a, b) => b.value - a.value)
-    .slice(0, 8);
-
-  // Monthly trend for line chart
-  const monthlyData = Object.entries(getMonthlyTrend())
-    .map(([month, value]) => ({ month, value }))
+  // Monthly Paid Amount Breakdown
+  const monthlyPaidData = {};
+  filteredExpenses.forEach(exp => {
+    const date = new Date(exp.date);
+    const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+    const monthLabel = date.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+    
+    if (!monthlyPaidData[monthKey]) {
+      monthlyPaidData[monthKey] = { month: monthLabel, paid: 0, total: 0, remaining: 0 };
+    }
+    const paidAmt = getPaidAmount(exp);
+    const totalAmt = getAmount(exp);
+    monthlyPaidData[monthKey].paid += paidAmt;
+    monthlyPaidData[monthKey].total += totalAmt;
+    monthlyPaidData[monthKey].remaining += (totalAmt - paidAmt);
+  });
+  
+  const monthlyData = Object.values(monthlyPaidData)
     .sort((a, b) => a.month.localeCompare(b.month))
     .slice(-6); // Last 6 months
 
-  // Get category colors
-  const getCategoryColor = (categoryName) => {
-    const category = categories.find(cat => cat.name === categoryName);
-    return category?.color || '#999';
-  };
+  // Expense Trend Over Time (Cumulative)
+  const sortedExpenses = [...filteredExpenses].sort((a, b) => new Date(a.date) - new Date(b.date));
+  let cumulative = 0;
+  const trendData = sortedExpenses.reduce((acc, exp) => {
+    cumulative += getAmount(exp);
+    const dateKey = new Date(exp.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    
+    // Group by same date
+    const existing = acc.find(item => item.date === dateKey);
+    if (existing) {
+      existing.cumulative = cumulative;
+    } else {
+      acc.push({ date: dateKey, cumulative });
+    }
+    return acc;
+  }, []).slice(-20); // Last 20 data points for better visualization
 
-  const COLORS = categoryData.map(item => getCategoryColor(item.name));
+  // Material colors
+  const MATERIAL_COLORS = ['#667eea', '#764ba2', '#f093fb', '#4facfe', '#00f2fe', '#43e97b', '#fa709a', '#fee140'];
 
   return (
-    <Container 
-      maxWidth="xl" 
+    <Box 
       sx={{ 
+        width: '100%',
         py: { xs: 2, sm: 3, md: 4 },
-        px: { xs: 1, sm: 2, md: 3 }
+        px: { xs: 1.5, sm: 2, md: 3 },
+        maxWidth: '100%'
       }}
     >
-      {/* Header */}
+      {/* Filters Section */}
       <Box sx={{ mb: 3 }}>
-        <Typography 
-          variant={isMobile ? "h4" : "h3"}
-          fontWeight="bold"
-          color="primary"
-          gutterBottom
-        >
-          📊 Dashboard
-        </Typography>
-        
-        {/* Time Range Filter - Stack on mobile */}
-        <Box sx={{ mt: 2 }}>
-          <ToggleButtonGroup
-            value={timeRange}
-            exclusive
-            onChange={(e, newValue) => newValue && setTimeRange(newValue)}
-            size={isMobile ? "small" : "medium"}
-            sx={{
-              flexWrap: isMobile ? 'wrap' : 'nowrap',
-              '& .MuiToggleButton-root': {
-                fontSize: { xs: '0.75rem', sm: '0.875rem' },
-                px: { xs: 1.5, sm: 2 },
-                py: { xs: 0.75, sm: 1 },
-                flex: isMobile ? '1 1 45%' : 'initial'
-              }
-            }}
-          >
-            <ToggleButton value="week">Week</ToggleButton>
-            <ToggleButton value="month">Month</ToggleButton>
-            <ToggleButton value="year">Year</ToggleButton>
-            <ToggleButton value="all">All</ToggleButton>
-          </ToggleButtonGroup>
+        <Grid container spacing={{ xs: 2, sm: 2 }}>
+          {/* Duration Filter - Dropdown */}
+          <Grid item xs={12} sm={4}>
+            <FormControl fullWidth size="medium">
+              <InputLabel id="duration-label" sx={{ fontSize: { xs: '1rem', sm: '0.9rem' }, '&.MuiInputLabel-shrink': { fontSize: { xs: '0.75rem', sm: '0.7rem' } } }}>Duration</InputLabel>
+              <Select
+                labelId="duration-label"
+                value={timeRange}
+                label="Duration"
+                onChange={(e) => setTimeRange(e.target.value)}
+                sx={{ 
+                  fontSize: { xs: '1.1rem', sm: '1rem' },
+                  minHeight: { xs: 56, sm: 52 }
+                }}
+              >
+                <MenuItem value="week" sx={{ fontSize: { xs: '1.1rem', sm: '1rem' } }}>Last Week</MenuItem>
+                <MenuItem value="month" sx={{ fontSize: { xs: '1.1rem', sm: '1rem' } }}>This Month</MenuItem>
+                <MenuItem value="quarter" sx={{ fontSize: { xs: '1.1rem', sm: '1rem' } }}>This Quarter</MenuItem>
+                <MenuItem value="year" sx={{ fontSize: { xs: '1.1rem', sm: '1rem' } }}>This Year</MenuItem>
+                <MenuItem value="all" sx={{ fontSize: { xs: '1.1rem', sm: '1rem' } }}>All Time</MenuItem>
+              </Select>
+            </FormControl>
+          </Grid>
           
           {/* Area Filter */}
-          <Box sx={{ mt: 2 }}>
-            <Typography variant="body2" fontWeight="600" sx={{ mb: 1, fontSize: { xs: '0.85rem', sm: '0.9rem' } }}>
-              🏢 Filter by Area/Floor:
-            </Typography>
-            <ToggleButtonGroup
-              value={areaFilter}
-              exclusive
-              onChange={(e, newValue) => newValue && setAreaFilter(newValue)}
-              size="small"
-              sx={{
-                flexWrap: 'wrap',
-                '& .MuiToggleButton-root': {
-                  fontSize: { xs: '0.7rem', sm: '0.75rem' },
-                  px: { xs: 1, sm: 1.5 },
-                  py: { xs: 0.5, sm: 0.75 },
-                  flex: isMobile ? '0 1 auto' : 'initial'
-                }
-              }}
-            >
-              <ToggleButton value="all">All</ToggleButton>
-              <ToggleButton value="Foundation">Foundation</ToggleButton>
-              <ToggleButton value="Ground Floor">Ground</ToggleButton>
-              <ToggleButton value="First Floor">1st Floor</ToggleButton>
-              <ToggleButton value="Second Floor">2nd Floor</ToggleButton>
-              <ToggleButton value="Third Floor">3rd Floor</ToggleButton>
-            </ToggleButtonGroup>
-          </Box>
+          <Grid item xs={12} sm={4}>
+            <FormControl fullWidth size="medium">
+              <InputLabel id="area-label" sx={{ fontSize: { xs: '1rem', sm: '0.9rem' }, '&.MuiInputLabel-shrink': { fontSize: { xs: '0.75rem', sm: '0.7rem' } } }}>Area/Floor</InputLabel>
+              <Select
+                labelId="area-label"
+                value={areaFilter}
+                label="Area/Floor"
+                onChange={(e) => setAreaFilter(e.target.value)}
+                sx={{ 
+                  fontSize: { xs: '1.1rem', sm: '1rem' },
+                  minHeight: { xs: 56, sm: 52 }
+                }}
+              >
+                <MenuItem value="all" sx={{ fontSize: { xs: '1.1rem', sm: '1rem' } }}>All</MenuItem>
+                <MenuItem value="Foundation" sx={{ fontSize: { xs: '1.1rem', sm: '1rem' } }}>Foundation</MenuItem>
+                <MenuItem value="Ground Floor" sx={{ fontSize: { xs: '1.1rem', sm: '1rem' } }}>Ground Floor</MenuItem>
+                <MenuItem value="First Floor" sx={{ fontSize: { xs: '1.1rem', sm: '1rem' } }}>First Floor</MenuItem>
+                <MenuItem value="Second Floor" sx={{ fontSize: { xs: '1.1rem', sm: '1rem' } }}>Second Floor</MenuItem>
+              </Select>
+            </FormControl>
+          </Grid>
           
           {/* Payment Status Filter */}
-          <Box sx={{ mt: 2 }}>
-            <Typography variant="body2" fontWeight="600" sx={{ mb: 1, fontSize: { xs: '0.85rem', sm: '0.9rem' } }}>
-              ✅ Filter by Payment Status:
-            </Typography>
-            <ToggleButtonGroup
-              value={paymentStatusFilter}
-              exclusive
-              onChange={(e, newValue) => newValue && setPaymentStatusFilter(newValue)}
-              size="small"
-              sx={{
-                flexWrap: 'wrap',
-                '& .MuiToggleButton-root': {
-                  fontSize: { xs: '0.7rem', sm: '0.75rem' },
-                  px: { xs: 1.5, sm: 2 },
-                  py: { xs: 0.5, sm: 0.75 }
-                }
-              }}
-            >
-              <ToggleButton value="all">All</ToggleButton>
-              <ToggleButton value="Paid">✅ Paid</ToggleButton>
-              <ToggleButton value="Unpaid">⏳ Unpaid</ToggleButton>
-              <ToggleButton value="Partial">⚠️ Partial</ToggleButton>
-            </ToggleButtonGroup>
-          </Box>
-        </Box>
+          <Grid item xs={12} sm={4}>
+            <FormControl fullWidth size="medium">
+              <InputLabel id="status-label" sx={{ fontSize: { xs: '1rem', sm: '0.9rem' }, '&.MuiInputLabel-shrink': { fontSize: { xs: '0.75rem', sm: '0.7rem' } } }}>Payment Status</InputLabel>
+              <Select
+                labelId="status-label"
+                value={paymentStatusFilter}
+                label="Payment Status"
+                onChange={(e) => setPaymentStatusFilter(e.target.value)}
+                sx={{ 
+                  fontSize: { xs: '1.1rem', sm: '1rem' },
+                  minHeight: { xs: 56, sm: 52 }
+                }}
+              >
+                <MenuItem value="all" sx={{ fontSize: { xs: '1.1rem', sm: '1rem' } }}>All Status</MenuItem>
+                <MenuItem value="Clear" sx={{ fontSize: { xs: '1.1rem', sm: '1rem' } }}>✅ Paid</MenuItem>
+                <MenuItem value="Pending" sx={{ fontSize: { xs: '1.1rem', sm: '1rem' } }}>⏳ Pending</MenuItem>
+                <MenuItem value="Partial" sx={{ fontSize: { xs: '1.1rem', sm: '1rem' } }}>⚠️ Partial</MenuItem>
+              </Select>
+            </FormControl>
+          </Grid>
+        </Grid>
       </Box>
 
-      {/* Summary Cards - 2 columns on mobile */}
-      <Grid container spacing={{ xs: 2, sm: 3 }} sx={{ mb: 4 }}>
-        <Grid item xs={6} sm={6} md={3}>
-          <Card 
-            elevation={4}
-            sx={{ 
-              background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-              height: '100%',
-              minHeight: { xs: 120, sm: 140, md: 160 },
-              display: 'flex',
-              flexDirection: 'column',
-              transition: 'transform 0.2s',
-              '&:hover': {
-                transform: 'translateY(-4px)',
-                boxShadow: 6
-              }
-            }}
-          >
-            <CardContent sx={{ 
-              p: { xs: 2, sm: 2.5, md: 3 },
-              flex: 1,
-              display: 'flex',
-              flexDirection: 'column',
-              justifyContent: 'space-between',
-              '&:last-child': { pb: { xs: 2, sm: 2.5, md: 3 } }
-            }}>
-              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1 }}>
-                <Typography color="white" variant="body2" sx={{ fontSize: { xs: '0.75rem', sm: '0.875rem', md: '1rem' }, fontWeight: 600 }}>
-                  Total Expenses
-                </Typography>
-                <AccountBalanceWalletIcon sx={{ color: 'white', fontSize: { xs: '1.5rem', sm: '1.8rem', md: '2rem' }, opacity: 0.9 }} />
-              </Box>
-              <Typography 
-                variant="h4"
-                color="white" 
-                fontWeight="bold"
-                sx={{ fontSize: { xs: '1.4rem', sm: '1.8rem', md: '2.2rem' }, mt: 'auto' }}
-              >
-                {totalExpenses.toLocaleString()}
-              </Typography>
-              <Typography color="white" variant="caption" sx={{ fontSize: { xs: '0.65rem', sm: '0.75rem' }, opacity: 0.9, mt: 0.5 }}>
-                PKR
-              </Typography>
-            </CardContent>
-          </Card>
-        </Grid>
-
-        <Grid item xs={6} sm={6} md={3}>
+      {/* KPI Cards - 6 cards in 2 rows on mobile, 1 row on desktop */}
+      <Grid 
+        container 
+        spacing={{ xs: 2, sm: 2, md: 3 }} 
+        sx={{ 
+          mb: 4
+        }}
+      >
+        {/* Total Paid */}
+        <Grid item xs={6} sm={4} md={2} sx={{ display: 'flex' }}>
           <Card 
             elevation={4}
             sx={{ 
               background: 'linear-gradient(135deg, #43e97b 0%, #38f9d7 100%)',
-              height: '100%',
-              minHeight: { xs: 120, sm: 140, md: 160 },
+              width: '100%',
               display: 'flex',
               flexDirection: 'column',
+              minHeight: { xs: 140, sm: 150, md: 150 },
               transition: 'transform 0.2s',
-              '&:hover': {
-                transform: 'translateY(-4px)',
-                boxShadow: 6
-              }
+              '&:hover': { transform: 'translateY(-4px)', boxShadow: 6 }
             }}
           >
-            <CardContent sx={{ 
-              p: { xs: 2, sm: 2.5, md: 3 },
-              flex: 1,
-              display: 'flex',
-              flexDirection: 'column',
-              justifyContent: 'space-between',
-              '&:last-child': { pb: { xs: 2, sm: 2.5, md: 3 } }
-            }}>
+            <CardContent sx={{ p: { xs: 2, sm: 2, md: 2.5 }, flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
               <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1 }}>
-                <Typography color="white" variant="body2" sx={{ fontSize: { xs: '0.75rem', sm: '0.875rem', md: '1rem' }, fontWeight: 600 }}>
+                <Typography color="white" variant="caption" sx={{ fontSize: { xs: '0.8rem', sm: '0.85rem' }, fontWeight: 600 }}>
                   Total Paid
                 </Typography>
-                <CalendarMonthIcon sx={{ color: 'white', fontSize: { xs: '1.5rem', sm: '1.8rem', md: '2rem' }, opacity: 0.9 }} />
+                <AccountBalanceWalletIcon sx={{ color: 'white', fontSize: { xs: '1.4rem', sm: '1.5rem' }, opacity: 0.9 }} />
               </Box>
-              <Typography 
-                variant="h4"
-                color="white" 
-                fontWeight="bold"
-                sx={{ fontSize: { xs: '1.4rem', sm: '1.8rem', md: '2.2rem' }, mt: 'auto' }}
-              >
+              <Typography variant="h5" color="white" fontWeight="bold" sx={{ fontSize: { xs: '1.3rem', sm: '1.4rem', md: '1.8rem' }, mb: 0.5 }}>
                 {totalPaid.toLocaleString()}
               </Typography>
-              <Typography color="white" variant="caption" sx={{ fontSize: { xs: '0.65rem', sm: '0.75rem' }, opacity: 0.9, mt: 0.5 }}>
+              <Typography color="white" variant="caption" sx={{ fontSize: { xs: '0.75rem', sm: '0.75rem' }, opacity: 0.9 }}>
                 PKR
               </Typography>
             </CardContent>
           </Card>
         </Grid>
 
-        <Grid item xs={6} sm={6} md={3}>
+        {/* Remaining */}
+        <Grid item xs={6} sm={4} md={2} sx={{ display: 'flex' }}>
+          <Card 
+            elevation={4}
+            sx={{ 
+              background: 'linear-gradient(135deg, #fa709a 0%, #fee140 100%)',
+              width: '100%',
+              display: 'flex',
+              flexDirection: 'column',
+              minHeight: { xs: 140, sm: 150, md: 150 },
+              transition: 'transform 0.2s',
+              '&:hover': { transform: 'translateY(-4px)', boxShadow: 6 }
+            }}
+          >
+            <CardContent sx={{ p: { xs: 2, sm: 2, md: 2.5 }, flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1 }}>
+                <Typography color="white" variant="caption" sx={{ fontSize: { xs: '0.8rem', sm: '0.85rem' }, fontWeight: 600 }}>
+                  Remaining
+                </Typography>
+                <MoneyOffIcon sx={{ color: 'white', fontSize: { xs: '1.4rem', sm: '1.5rem' }, opacity: 0.9 }} />
+              </Box>
+              <Typography variant="h5" color="white" fontWeight="bold" sx={{ fontSize: { xs: '1.3rem', sm: '1.4rem', md: '1.8rem' }, mb: 0.5 }}>
+                {totalRemaining.toLocaleString()}
+              </Typography>
+              <Typography color="white" variant="caption" sx={{ fontSize: { xs: '0.75rem', sm: '0.75rem' }, opacity: 0.9 }}>
+                PKR
+              </Typography>
+            </CardContent>
+          </Card>
+        </Grid>
+
+        {/* Transactions */}
+        <Grid item xs={6} sm={4} md={2} sx={{ display: 'flex' }}>
           <Card 
             elevation={4}
             sx={{ 
               background: 'linear-gradient(135deg, #4facfe 0%, #00f2fe 100%)',
-              height: '100%',
-              minHeight: { xs: 120, sm: 140, md: 160 },
+              width: '100%',
               display: 'flex',
               flexDirection: 'column',
+              minHeight: { xs: 140, sm: 150, md: 150 },
               transition: 'transform 0.2s',
-              '&:hover': {
-                transform: 'translateY(-4px)',
-                boxShadow: 6
-              }
+              '&:hover': { transform: 'translateY(-4px)', boxShadow: 6 }
             }}
           >
-            <CardContent sx={{ 
-              p: { xs: 2, sm: 2.5, md: 3 },
-              flex: 1,
-              display: 'flex',
-              flexDirection: 'column',
-              justifyContent: 'space-between',
-              '&:last-child': { pb: { xs: 2, sm: 2.5, md: 3 } }
-            }}>
+            <CardContent sx={{ p: { xs: 2, sm: 2, md: 2.5 }, flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
               <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1 }}>
-                <Typography color="white" variant="body2" sx={{ fontSize: { xs: '0.75rem', sm: '0.875rem', md: '1rem' }, fontWeight: 600 }}>
+                <Typography color="white" variant="caption" sx={{ fontSize: { xs: '0.8rem', sm: '0.85rem' }, fontWeight: 600 }}>
                   Transactions
                 </Typography>
-                <ReceiptIcon sx={{ color: 'white', fontSize: { xs: '1.5rem', sm: '1.8rem', md: '2rem' }, opacity: 0.9 }} />
+                <ReceiptIcon sx={{ color: 'white', fontSize: { xs: '1.4rem', sm: '1.5rem' }, opacity: 0.9 }} />
               </Box>
-              <Typography 
-                variant="h4"
-                color="white" 
-                fontWeight="bold"
-                sx={{ fontSize: { xs: '1.4rem', sm: '1.8rem', md: '2.2rem' }, mt: 'auto' }}
-              >
-                {filteredExpenses.length}
+              <Typography variant="h5" color="white" fontWeight="bold" sx={{ fontSize: { xs: '1.3rem', sm: '1.4rem', md: '1.8rem' }, mb: 0.5 }}>
+                {transactionCount}
               </Typography>
-              <Typography color="white" variant="caption" sx={{ fontSize: { xs: '0.65rem', sm: '0.75rem' }, opacity: 0.9, mt: 0.5 }}>
+              <Typography color="white" variant="caption" sx={{ fontSize: { xs: '0.75rem', sm: '0.75rem' }, opacity: 0.9 }}>
                 Total entries
               </Typography>
             </CardContent>
           </Card>
         </Grid>
 
-        <Grid item xs={6} sm={6} md={3}>
+        {/* Contractor Cost */}
+        <Grid item xs={6} sm={4} md={2} sx={{ display: 'flex' }}>
           <Card 
             elevation={4}
             sx={{ 
-              background: 'linear-gradient(135deg, #fa709a 0%, #fee140 100%)',
-              height: '100%',
-              minHeight: { xs: 120, sm: 140, md: 160 },
+              background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+              width: '100%',
               display: 'flex',
               flexDirection: 'column',
+              minHeight: { xs: 140, sm: 150, md: 150 },
               transition: 'transform 0.2s',
-              '&:hover': {
-                transform: 'translateY(-4px)',
-                boxShadow: 6
-              }
+              '&:hover': { transform: 'translateY(-4px)', boxShadow: 6 }
             }}
           >
-            <CardContent sx={{ 
-              p: { xs: 2, sm: 2.5, md: 3 },
-              flex: 1,
+            <CardContent sx={{ p: { xs: 2, sm: 2, md: 2.5 }, flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1 }}>
+                <Typography color="white" variant="caption" sx={{ fontSize: { xs: '0.8rem', sm: '0.85rem' }, fontWeight: 600 }}>
+                  Contractor Cost
+                </Typography>
+                <ConstructionIcon sx={{ color: 'white', fontSize: { xs: '1.4rem', sm: '1.5rem' }, opacity: 0.9 }} />
+              </Box>
+              <Typography variant="h5" color="white" fontWeight="bold" sx={{ fontSize: { xs: '1.3rem', sm: '1.4rem', md: '1.8rem' }, mb: 0.5 }}>
+                {contractorCost.toLocaleString()}
+              </Typography>
+              <Typography color="white" variant="caption" sx={{ fontSize: { xs: '0.75rem', sm: '0.75rem' }, opacity: 0.9 }}>
+                PKR Paid
+              </Typography>
+            </CardContent>
+          </Card>
+        </Grid>
+
+        {/* Material Cost */}
+        <Grid item xs={6} sm={4} md={2} sx={{ display: 'flex' }}>
+          <Card 
+            elevation={4}
+            sx={{ 
+              background: 'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)',
+              width: '100%',
               display: 'flex',
               flexDirection: 'column',
-              justifyContent: 'space-between',
-              '&:last-child': { pb: { xs: 2, sm: 2.5, md: 3 } }
-            }}>
+              minHeight: { xs: 140, sm: 150, md: 150 },
+              transition: 'transform 0.2s',
+              '&:hover': { transform: 'translateY(-4px)', boxShadow: 6 }
+            }}
+          >
+            <CardContent sx={{ p: { xs: 2, sm: 2, md: 2.5 }, flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
               <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1 }}>
-                <Typography color="white" variant="body2" sx={{ fontSize: { xs: '0.75rem', sm: '0.875rem', md: '1rem' }, fontWeight: 600 }}>
-                  Remaining
+                <Typography color="white" variant="caption" sx={{ fontSize: { xs: '0.8rem', sm: '0.85rem' }, fontWeight: 600 }}>
+                  Material Cost
                 </Typography>
-                <TrendingUpIcon sx={{ color: 'white', fontSize: { xs: '1.5rem', sm: '1.8rem', md: '2rem' }, opacity: 0.9 }} />
+                <CategoryIcon sx={{ color: 'white', fontSize: { xs: '1.4rem', sm: '1.5rem' }, opacity: 0.9 }} />
               </Box>
-              <Typography 
-                variant="h4"
-                color="white" 
-                fontWeight="bold"
-                sx={{ fontSize: { xs: '1.4rem', sm: '1.8rem', md: '2.2rem' }, mt: 'auto' }}
-              >
-                {totalRemaining.toLocaleString()}
+              <Typography variant="h5" color="white" fontWeight="bold" sx={{ fontSize: { xs: '1.3rem', sm: '1.4rem', md: '1.8rem' }, mb: 0.5 }}>
+                {materialCost.toLocaleString()}
               </Typography>
-              <Typography color="white" variant="caption" sx={{ fontSize: { xs: '0.65rem', sm: '0.75rem' }, opacity: 0.9, mt: 0.5 }}>
+              <Typography color="white" variant="caption" sx={{ fontSize: { xs: '0.75rem', sm: '0.75rem' }, opacity: 0.9 }}>
+                PKR Total
+              </Typography>
+            </CardContent>
+          </Card>
+        </Grid>
+
+        {/* Total Expenses */}
+        <Grid item xs={6} sm={4} md={2} sx={{ display: 'flex' }}>
+          <Card 
+            elevation={4}
+            sx={{ 
+              background: 'linear-gradient(135deg, #ffecd2 0%, #fcb69f 100%)',
+              width: '100%',
+              display: 'flex',
+              flexDirection: 'column',
+              minHeight: { xs: 140, sm: 150, md: 150 },
+              transition: 'transform 0.2s',
+              '&:hover': { transform: 'translateY(-4px)', boxShadow: 6 }
+            }}
+          >
+            <CardContent sx={{ p: { xs: 2, sm: 2, md: 2.5 }, flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1 }}>
+                <Typography color="white" variant="caption" sx={{ fontSize: { xs: '0.8rem', sm: '0.85rem' }, fontWeight: 600 }}>
+                  Total Expenses
+                </Typography>
+                <TrendingUpIcon sx={{ color: 'white', fontSize: { xs: '1.4rem', sm: '1.5rem' }, opacity: 0.9 }} />
+              </Box>
+              <Typography variant="h5" color="white" fontWeight="bold" sx={{ fontSize: { xs: '1.3rem', sm: '1.4rem', md: '1.8rem' }, mb: 0.5 }}>
+                {totalExpenses.toLocaleString()}
+              </Typography>
+              <Typography color="white" variant="caption" sx={{ fontSize: { xs: '0.75rem', sm: '0.75rem' }, opacity: 0.9 }}>
                 PKR
               </Typography>
             </CardContent>
@@ -412,351 +452,156 @@ const Dashboard = () => {
         </Grid>
       </Grid>
 
-      {/* Charts Section - One Per Row with Insights */}
+      {/* Charts Section */}
       <Grid container spacing={{ xs: 2, sm: 3 }}>
         
-        {/* Payment Status Overview */}
-        <Grid item xs={12}>
-          <Paper 
-            elevation={3}
-            sx={{ 
-              p: { xs: 2, sm: 3 },
-              borderRadius: 2,
-              background: 'linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%)'
-            }}
-          >
-            <Typography variant={isMobile ? "h6" : "h5"} fontWeight="bold" gutterBottom color="primary">
-              💳 Payment Status Breakdown
-            </Typography>
-            <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-              Track how much is paid vs pending across all expenses
-            </Typography>
-            
-            <Grid container spacing={2}>
-              <Grid item xs={12} md={8}>
-                <ResponsiveContainer width="100%" height={isMobile ? 250 : 350}>
-                  <BarChart 
-                    data={[
-                      { name: 'Total Expenses', amount: totalExpenses, fill: '#667eea' },
-                      { name: 'Paid Amount', amount: totalPaid, fill: '#43e97b' },
-                      { name: 'Remaining', amount: totalRemaining, fill: '#fa709a' }
-                    ]}
-                    layout="horizontal"
+        {/* Material Cost Breakdown */}
+        {materialData.length > 0 && (
+          <Grid item xs={12} md={6}>
+            <Paper 
+              elevation={3}
+              sx={{ 
+                p: { xs: 2, sm: 3 },
+                borderRadius: 2,
+                backgroundColor: '#ffffff',
+                height: { xs: 400, sm: 450 }
+              }}
+            >
+              <Typography variant={isMobile ? "h6" : "h5"} fontWeight="bold" gutterBottom color="primary">
+                🧱 Material Cost Breakdown
+              </Typography>
+              <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                Distribution by material type (cement, bricks, etc.)
+              </Typography>
+              
+              <ResponsiveContainer width="100%" height={isMobile ? 280 : 350}>
+                <PieChart>
+                  <Pie
+                    data={materialData}
+                    cx="50%"
+                    cy="50%"
+                    labelLine={true}
+                    label={({ name, percent }) => 
+                      isMobile ? `${(percent * 100).toFixed(0)}%` : `${name}: ${(percent * 100).toFixed(1)}%`
+                    }
+                    outerRadius={isMobile ? 80 : 110}
+                    fill="#8884d8"
+                    dataKey="value"
                   >
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis type="number" tick={{ fontSize: isMobile ? 10 : 12 }} />
-                    <YAxis 
-                      dataKey="name" 
-                      type="category"
-                      tick={{ fontSize: isMobile ? 10 : 12 }}
-                      width={isMobile ? 90 : 120}
-                    />
-                    <Tooltip 
-                      formatter={(value) => `${value.toLocaleString()} PKR`}
-                      contentStyle={{ fontSize: isMobile ? '0.85rem' : '1rem' }}
-                    />
-                    <Bar dataKey="amount" radius={[0, 8, 8, 0]}>
-                      {[0, 1, 2].map((index) => (
-                        <Cell key={`cell-${index}`} fill={index === 0 ? '#667eea' : index === 1 ? '#43e97b' : '#fa709a'} />
-                      ))}
-                    </Bar>
-                  </BarChart>
-                </ResponsiveContainer>
-              </Grid>
-              
-              <Grid item xs={12} md={4}>
-                <Box sx={{ p: 2, bgcolor: 'white', borderRadius: 2, height: '100%' }}>
-                  <Typography variant="h6" gutterBottom>📊 Insights</Typography>
-                  <Stack spacing={1.5}>
-                    <Box>
-                      <Typography variant="caption" color="text.secondary">Payment Progress</Typography>
-                      <Typography variant="h6" fontWeight="bold" color="success.main">
-                        {totalExpenses > 0 ? ((totalPaid / totalExpenses) * 100).toFixed(1) : 0}%
-                      </Typography>
-                    </Box>
-                    <Box>
-                      <Typography variant="caption" color="text.secondary">Outstanding Balance</Typography>
-                      <Typography variant="h6" fontWeight="bold" color="error.main">
-                        {totalRemaining.toLocaleString()} PKR
-                      </Typography>
-                    </Box>
-                    <Box>
-                      <Typography variant="caption" color="text.secondary">Status</Typography>
-                      <Typography variant="body2" fontWeight="bold">
-                        {totalRemaining === 0 ? '✅ All Clear' : totalRemaining < totalExpenses * 0.1 ? '🟡 Almost Done' : '🔴 Pending Payments'}
-                      </Typography>
-                    </Box>
-                  </Stack>
-                </Box>
-              </Grid>
-            </Grid>
-          </Paper>
-        </Grid>
-
-        {/* Area/Floor Breakdown */}
-        {(() => {
-          const areaData = {};
-          const areaPaid = {};
-          const areaRemaining = {};
-          
-          filteredExpenses.forEach(exp => {
-            const area = exp.area || 'Unassigned';
-            const amount = getAmount(exp);
-            const paid = getPaidAmount(exp);
-            const remaining = getRemainingAmount(exp);
-            
-            areaData[area] = (areaData[area] || 0) + amount;
-            areaPaid[area] = (areaPaid[area] || 0) + paid;
-            areaRemaining[area] = (areaRemaining[area] || 0) + remaining;
-          });
-          
-          const areaChartData = Object.keys(areaData).map(area => ({
-            area,
-            total: areaData[area],
-            paid: areaPaid[area],
-            remaining: areaRemaining[area]
-          })).sort((a, b) => b.total - a.total);
-
-          return areaChartData.length > 0 && (
-            <Grid item xs={12}>
-              <Paper 
-                elevation={3}
-                sx={{ 
-                  p: { xs: 2, sm: 3 },
-                  borderRadius: 2,
-                  background: 'linear-gradient(135deg, #ffecd2 0%, #fcb69f 100%)'
-                }}
-              >
-                <Typography variant={isMobile ? "h6" : "h5"} fontWeight="bold" gutterBottom color="primary">
-                  🏢 Expenses by Area/Floor
-                </Typography>
-                <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                  Compare spending across different construction areas
-                </Typography>
-                
-                <ResponsiveContainer width="100%" height={isMobile ? 300 : 400}>
-                  <BarChart data={areaChartData}>
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis 
-                      dataKey="area" 
-                      tick={{ fontSize: isMobile ? 9 : 12 }}
-                      angle={isMobile ? -20 : 0}
-                      textAnchor={isMobile ? "end" : "middle"}
-                      height={isMobile ? 60 : 30}
-                    />
-                    <YAxis tick={{ fontSize: isMobile ? 10 : 12 }} />
-                    <Tooltip 
-                      formatter={(value) => `${value.toLocaleString()} PKR`}
-                      contentStyle={{ fontSize: isMobile ? '0.85rem' : '1rem' }}
-                    />
-                    <Legend wrapperStyle={{ fontSize: isMobile ? '0.85rem' : '1rem' }} />
-                    <Bar dataKey="total" fill="#667eea" name="Total" radius={[8, 8, 0, 0]} />
-                    <Bar dataKey="paid" fill="#43e97b" name="Paid" radius={[8, 8, 0, 0]} />
-                    <Bar dataKey="remaining" fill="#fa709a" name="Remaining" radius={[8, 8, 0, 0]} />
-                  </BarChart>
-                </ResponsiveContainer>
-              </Paper>
-            </Grid>
-          );
-        })()}
-
-        {/* Category Breakdown with Details */}
-        {categoryData.length > 0 && (
-          <Grid item xs={12}>
-            <Paper 
-              elevation={3}
-              sx={{ 
-                p: { xs: 2, sm: 3 },
-                borderRadius: 2,
-                background: 'linear-gradient(135deg, #e0c3fc 0%, #8ec5fc 100%)'
-              }}
-            >
-              <Typography variant={isMobile ? "h6" : "h5"} fontWeight="bold" gutterBottom color="primary">
-                💼 Category Distribution
-              </Typography>
-              <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                Breakdown of expenses by category (Contractor, Material, Misc)
-              </Typography>
-              
-              <Grid container spacing={2}>
-                <Grid item xs={12} md={6}>
-                  <ResponsiveContainer width="100%" height={isMobile ? 300 : 400}>
-                    <PieChart>
-                      <Pie
-                        data={categoryData}
-                        cx="50%"
-                        cy="50%"
-                        labelLine={true}
-                        label={({ name, percent, value }) => 
-                          isMobile ? `${(percent * 100).toFixed(0)}%` : `${name}: ${(percent * 100).toFixed(1)}%`
-                        }
-                        outerRadius={isMobile ? 90 : 140}
-                        fill="#8884d8"
-                        dataKey="value"
-                      >
-                        {categoryData.map((entry, index) => (
-                          <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                        ))}
-                      </Pie>
-                      <Tooltip 
-                        formatter={(value) => `${value.toLocaleString()} PKR`}
-                        contentStyle={{ fontSize: isMobile ? '0.85rem' : '1rem' }}
-                      />
-                    </PieChart>
-                  </ResponsiveContainer>
-                </Grid>
-                
-                <Grid item xs={12} md={6}>
-                  <Box sx={{ p: 2, bgcolor: 'white', borderRadius: 2 }}>
-                    <Typography variant="h6" gutterBottom>📋 Category Details</Typography>
-                    <Stack spacing={2}>
-                      {categoryData.map((cat, index) => (
-                        <Box 
-                          key={cat.name}
-                          sx={{ 
-                            p: 1.5, 
-                            borderRadius: 1, 
-                            bgcolor: COLORS[index] + '20',
-                            border: `2px solid ${COLORS[index]}`
-                          }}
-                        >
-                          <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.5 }}>
-                            <Typography variant="body1" fontWeight="bold">{cat.name}</Typography>
-                            <Typography variant="body1" fontWeight="bold" color={COLORS[index]}>
-                              {cat.value.toLocaleString()} PKR
-                            </Typography>
-                          </Box>
-                          <Typography variant="caption" color="text.secondary">
-                            {((cat.value / totalExpenses) * 100).toFixed(1)}% of total budget
-                          </Typography>
-                        </Box>
-                      ))}
-                    </Stack>
-                  </Box>
-                </Grid>
-              </Grid>
-            </Paper>
-          </Grid>
-        )}
-
-        {/* Monthly Trend with Paid vs Total */}
-        {monthlyData.length > 1 && (
-          <Grid item xs={12}>
-            <Paper 
-              elevation={3}
-              sx={{ 
-                p: { xs: 2, sm: 3 },
-                borderRadius: 2,
-                background: 'linear-gradient(135deg, #a1c4fd 0%, #c2e9fb 100%)'
-              }}
-            >
-              <Typography variant={isMobile ? "h6" : "h5"} fontWeight="bold" gutterBottom color="primary">
-                📈 Monthly Spending Trend
-              </Typography>
-              <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                Track how your construction expenses have evolved over the past 6 months
-              </Typography>
-              
-              <ResponsiveContainer width="100%" height={isMobile ? 250 : 400}>
-                <LineChart data={monthlyData}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis 
-                    dataKey="month" 
-                    tick={{ fontSize: isMobile ? 9 : 12 }}
-                    angle={isMobile ? -20 : 0}
-                    textAnchor={isMobile ? "end" : "middle"}
-                    height={isMobile ? 60 : 30}
-                  />
-                  <YAxis tick={{ fontSize: isMobile ? 10 : 12 }} />
+                    {materialData.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={MATERIAL_COLORS[index % MATERIAL_COLORS.length]} />
+                    ))}
+                  </Pie>
                   <Tooltip 
                     formatter={(value) => `${value.toLocaleString()} PKR`}
                     contentStyle={{ fontSize: isMobile ? '0.85rem' : '1rem' }}
-                    labelStyle={{ fontWeight: 'bold' }}
                   />
-                  <Legend wrapperStyle={{ fontSize: isMobile ? '0.85rem' : '1rem' }} />
-                  <Line 
-                    type="monotone" 
-                    dataKey="value" 
-                    stroke="#1976d2" 
-                    strokeWidth={isMobile ? 2 : 4}
-                    name="Total Expenses"
-                    dot={{ r: isMobile ? 4 : 6, fill: '#1976d2' }}
-                    activeDot={{ r: 8 }}
-                  />
-                </LineChart>
+                </PieChart>
               </ResponsiveContainer>
             </Paper>
           </Grid>
         )}
 
-        {/* Top Vendors */}
-        {vendorData.length > 0 && (
-          <Grid item xs={12}>
+        {/* Monthly Paid Amount Breakdown */}
+        {monthlyData.length > 0 && (
+          <Grid item xs={12} md={6}>
             <Paper 
               elevation={3}
               sx={{ 
                 p: { xs: 2, sm: 3 },
                 borderRadius: 2,
-                background: 'linear-gradient(135deg, #ffecd2 0%, #fcb69f 100%)'
+                backgroundColor: '#ffffff',
+                height: { xs: 400, sm: 450 }
               }}
             >
               <Typography variant={isMobile ? "h6" : "h5"} fontWeight="bold" gutterBottom color="primary">
-                🏪 Top Vendors
+                💰 Monthly Payment Breakdown
               </Typography>
               <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                Your highest spending vendors ranked by total amount
+                Total vs Remaining (Not Paid) expenses per month
               </Typography>
               
-              <ResponsiveContainer width="100%" height={Math.max(vendorData.length * 50, isMobile ? 250 : 350)}>
-                <BarChart data={vendorData} layout="vertical">
+              <ResponsiveContainer width="100%" height={isMobile ? 280 : 350}>
+                <BarChart data={monthlyData}>
                   <CartesianGrid strokeDasharray="3 3" />
                   <XAxis 
-                    type="number" 
-                    tick={{ fontSize: isMobile ? 10 : 12 }}
-                    tickFormatter={(value) => `${(value / 1000).toFixed(0)}k`}
+                    dataKey="month" 
+                    tick={{ fontSize: isMobile ? 9 : 11 }}
+                    angle={isMobile ? -20 : 0}
+                    textAnchor={isMobile ? "end" : "middle"}
+                    height={isMobile ? 60 : 30}
                   />
-                  <YAxis 
-                    dataKey="name" 
-                    type="category" 
-                    width={isMobile ? 80 : 120}
-                    tick={{ fontSize: isMobile ? 9 : 12 }}
-                  />
+                  <YAxis tick={{ fontSize: isMobile ? 9 : 11 }} />
                   <Tooltip 
                     formatter={(value) => `${value.toLocaleString()} PKR`}
                     contentStyle={{ fontSize: isMobile ? '0.85rem' : '1rem' }}
                   />
-                  <Bar dataKey="value" fill="#1976d2" radius={[0, 8, 8, 0]}>
-                    {vendorData.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={`hsl(${210 + index * 20}, 70%, 50%)`} />
-                    ))}
-                  </Bar>
+                  <Legend wrapperStyle={{ fontSize: isMobile ? '0.75rem' : '0.9rem' }} />
+                  <Bar dataKey="total" fill="#667eea" name="Total" radius={[8, 8, 0, 0]} />
+                  <Bar dataKey="remaining" fill="#fa709a" name="Not Paid" radius={[8, 8, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
             </Paper>
           </Grid>
         )}
-      </Grid>
 
-      {/* Empty State */}
-      {expenses.length === 0 && (
-        <Box 
-          sx={{ 
-            textAlign: 'center', 
-            py: 8,
-            bgcolor: 'grey.50',
-            borderRadius: 2,
-            mt: 4
-          }}
-        >
-          <Typography variant="h5" color="text.secondary" gutterBottom>
-            No expenses yet
-          </Typography>
-          <Typography variant="body1" color="text.secondary">
-            Start adding expenses to see your dashboard come to life!
-          </Typography>
-        </Box>
-      )}
-    </Container>
+        {/* Expense Trend Over Time */}
+        {trendData.length > 1 && (
+          <Grid item xs={12}>
+            <Paper 
+              elevation={3}
+              sx={{ 
+                p: { xs: 2, sm: 3 },
+                borderRadius: 2,
+                backgroundColor: '#ffffff',
+                height: { xs: 400, sm: 450 }
+              }}
+            >
+              <Typography variant={isMobile ? "h6" : "h5"} fontWeight="bold" gutterBottom color="primary">
+                📈 Expense Trend Over Time
+              </Typography>
+              <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                Cumulative expense growth to track project progress
+              </Typography>
+              
+              <ResponsiveContainer width="100%" height={isMobile ? 280 : 350}>
+                <AreaChart data={trendData}>
+                  <defs>
+                    <linearGradient id="colorCumulative" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#667eea" stopOpacity={0.8}/>
+                      <stop offset="95%" stopColor="#667eea" stopOpacity={0.1}/>
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis 
+                    dataKey="date" 
+                    tick={{ fontSize: isMobile ? 9 : 11 }}
+                    angle={isMobile ? -20 : 0}
+                    textAnchor={isMobile ? "end" : "middle"}
+                    height={isMobile ? 60 : 30}
+                  />
+                  <YAxis tick={{ fontSize: isMobile ? 9 : 11 }} />
+                  <Tooltip 
+                    formatter={(value) => `${value.toLocaleString()} PKR`}
+                    contentStyle={{ fontSize: isMobile ? '0.85rem' : '1rem' }}
+                    labelStyle={{ fontWeight: 'bold' }}
+                  />
+                  <Area 
+                    type="monotone" 
+                    dataKey="cumulative" 
+                    stroke="#667eea" 
+                    strokeWidth={3}
+                    fillOpacity={1}
+                    fill="url(#colorCumulative)"
+                    name="Cumulative Expense"
+                  />
+                </AreaChart>
+              </ResponsiveContainer>
+            </Paper>
+          </Grid>
+        )}
+      </Grid>
+    </Box>
   );
 };
 

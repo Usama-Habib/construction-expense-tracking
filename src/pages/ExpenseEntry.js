@@ -911,22 +911,6 @@ const ExpenseEntry = () => {
           >
             📊 {filteredExpenses.length > 0 ? `Filtered Expenses (${filteredExpenses.length})` : `All Expenses (${expenses.length})`}
           </Typography>
-          
-          {!isMobile && filteredExpenses.length > 0 && (
-            <ToggleButtonGroup
-              value={viewMode}
-              exclusive
-              onChange={(e, newMode) => newMode && setViewMode(newMode)}
-              size="small"
-            >
-              <ToggleButton value="table">
-                <ViewListIcon sx={{ mr: 0.5 }} fontSize="small" /> Table
-              </ToggleButton>
-              <ToggleButton value="card">
-                <ViewModuleIcon sx={{ mr: 0.5 }} fontSize="small" /> Cards
-              </ToggleButton>
-            </ToggleButtonGroup>
-          )}
         </Box>
         
         {filteredExpenses.length === 0 ? (
@@ -942,12 +926,12 @@ const ExpenseEntry = () => {
               {expenses.length === 0 ? 'No expenses yet' : 'No expenses match your filters'}
             </Typography>
             <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-              {expenses.length === 0 ? 'Click "Add New Expense" button above to get started 👆' : 'Try adjusting your filters or clear them to see all expenses'}
+              {expenses.length === 0 ? 'Click the + button below to get started 👇' : 'Try adjusting your filters or clear them to see all expenses'}
             </Typography>
           </Box>
-        ) : (isMobile || viewMode === 'card') ? (
-          // CARD VIEW with Color-Coded Cards (Mobile-first or when card view selected)
-          <Stack spacing={1.5} sx={{ mt: 2, maxHeight: 'calc(100vh - 250px)', overflowY: 'auto' }}>
+        ) : isMobile ? (
+          // CARD VIEW for Mobile - Much better UX
+          <Stack spacing={2} sx={{ pb: 20 }}>
             {filteredExpenses.map((expense) => {
               const categoryInfo = categories.find(c => c.name === expense.category);
               const statusColors = getStatusColor(expense.paymentStatus);
@@ -960,134 +944,160 @@ const ExpenseEntry = () => {
                   key={expense.id}
                   elevation={2}
                   sx={{ 
-                    borderLeft: `5px solid ${statusColors.border}`,
+                    borderLeft: `6px solid ${statusColors.border}`,
                     bgcolor: statusColors.bg,
-                    transition: 'all 0.2s',
-                    '&:hover': {
-                      boxShadow: 6,
-                      transform: 'translateY(-2px)'
+                    '&:active': {
+                      transform: 'scale(0.98)',
+                      transition: 'transform 0.1s'
                     }
                   }}
                 >
-                  <CardContent sx={{ p: 2 }}>
-                    {/* Top Row: Date and Category */}
-                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1.5 }}>
-                      <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.8rem', fontWeight: 500 }}>
-                        📅 {new Date(expense.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
-                      </Typography>
+                  <CardContent sx={{ pb: 1 }}>
+                    {/* Header Row - Date and Category */}
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 2 }}>
+                      <Box>
+                        <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.7rem', display: 'block' }}>
+                          📅 {new Date(expense.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                        </Typography>
+                        <Chip 
+                          label={expense.category}
+                          size="small"
+                          sx={{ 
+                            bgcolor: categoryInfo?.color + '40',
+                            color: categoryInfo?.color,
+                            fontWeight: 700,
+                            fontSize: '0.85rem',
+                            mt: 0.5
+                          }}
+                        />
+                        {expense.subCategory && (
+                          <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5, fontSize: '0.75rem' }}>
+                            📋 {expense.subCategory}
+                          </Typography>
+                        )}
+                      </Box>
                       <Chip 
-                        label={expense.category}
+                        label={expense.paymentStatus || 'Pending'}
                         size="small"
                         sx={{ 
-                          bgcolor: categoryInfo?.color + '40',
-                          color: categoryInfo?.color,
-                          fontWeight: 600,
-                          fontSize: '0.75rem',
-                          height: '24px'
+                          bgcolor: statusColors.border,
+                          color: 'white',
+                          fontWeight: 700,
+                          fontSize: '0.75rem'
                         }}
                       />
                     </Box>
 
-                    {/* Amount Row */}
-                    <Box sx={{ mb: 1.5 }}>
-                      <Typography variant="h5" fontWeight="bold" color="primary" sx={{ mb: 0.5 }}>
-                        {totalAmt.toLocaleString()} PKR
-                      </Typography>
-                      <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
-                        <Typography variant="body2" sx={{ color: 'success.main', fontWeight: 600, fontSize: '0.85rem' }}>
-                          ✅ Paid: {paidAmt.toLocaleString()}
+                    {/* Amount Section - Most Important */}
+                    <Box sx={{ 
+                      display: 'grid', 
+                      gridTemplateColumns: '1fr 1fr 1fr',
+                      gap: 1.5,
+                      mb: 2,
+                      p: 1.5,
+                      bgcolor: 'white',
+                      borderRadius: 1,
+                      border: '1px solid',
+                      borderColor: 'grey.200'
+                    }}>
+                      <Box sx={{ textAlign: 'center' }}>
+                        <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.65rem', display: 'block' }}>
+                          Total
                         </Typography>
-                        {remainingAmt > 0 && (
-                          <Typography variant="body2" sx={{ color: 'error.main', fontWeight: 600, fontSize: '0.85rem' }}>
-                            ⏳ Remaining: {remainingAmt.toLocaleString()}
-                          </Typography>
-                        )}
+                        <Typography variant="h6" color="primary.main" fontWeight="bold" sx={{ fontSize: '1.1rem' }}>
+                          {totalAmt.toLocaleString()}
+                        </Typography>
+                      </Box>
+                      <Box sx={{ textAlign: 'center', borderLeft: '1px solid', borderRight: '1px solid', borderColor: 'grey.200' }}>
+                        <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.65rem', display: 'block' }}>
+                          Paid
+                        </Typography>
+                        <Typography variant="h6" color="success.main" fontWeight="bold" sx={{ fontSize: '1.1rem' }}>
+                          {paidAmt.toLocaleString()}
+                        </Typography>
+                      </Box>
+                      <Box sx={{ textAlign: 'center' }}>
+                        <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.65rem', display: 'block' }}>
+                          Remaining
+                        </Typography>
+                        <Typography variant="h6" color="warning.main" fontWeight="bold" sx={{ fontSize: '1.1rem' }}>
+                          {remainingAmt.toLocaleString()}
+                        </Typography>
                       </Box>
                     </Box>
 
-                    {/* Details Grid */}
-                    <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 1, mb: 1.5 }}>
-                      {expense.subCategory && (
-                        <Box>
-                          <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.7rem' }}>
-                            Sub-Category
-                          </Typography>
-                          <Typography variant="body2" sx={{ fontSize: '0.85rem', fontWeight: 500 }}>
-                            {expense.subCategory}
-                          </Typography>
-                        </Box>
-                      )}
+                    {/* Additional Details */}
+                    <Stack spacing={0.5} sx={{ mb: 1 }}>
                       {expense.quantity && (
-                        <Box>
-                          <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.7rem' }}>
-                            Quantity
-                          </Typography>
-                          <Typography variant="body2" sx={{ fontSize: '0.85rem', fontWeight: 500 }}>
-                            📦 {expense.quantity}{expense.unit ? ' ' + expense.unit : ''}
-                          </Typography>
-                        </Box>
+                        <Typography variant="body2" sx={{ fontSize: '0.85rem' }}>
+                          📦 <strong>Quantity:</strong> {expense.quantity}{expense.unit ? ' ' + expense.unit : ''}
+                        </Typography>
                       )}
                       {expense.area && (
-                        <Box>
-                          <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.7rem' }}>
-                            Area/Floor
-                          </Typography>
-                          <Typography variant="body2" sx={{ fontSize: '0.85rem', fontWeight: 500 }}>
-                            🏗️ {expense.area}
-                          </Typography>
-                        </Box>
+                        <Typography variant="body2" sx={{ fontSize: '0.85rem' }}>
+                          🏢 <strong>Area:</strong> {expense.area}
+                        </Typography>
                       )}
-                    </Box>
-
-                    {/* Description */}
-                    {(expense.description || expense.notes) && (
-                      <Typography 
-                        variant="body2" 
-                        color="text.secondary" 
-                        sx={{ 
-                          fontSize: '0.85rem',
-                          mb: 1.5,
-                          fontStyle: 'italic',
-                          display: '-webkit-box',
-                          WebkitLineClamp: 2,
-                          WebkitBoxOrient: 'vertical',
-                          overflow: 'hidden'
-                        }}
-                      >
-                        {expense.description || expense.notes}
-                      </Typography>
-                    )}
-
-                    {/* Action Buttons */}
-                    <Box sx={{ display: 'flex', gap: 1, justifyContent: 'flex-end' }}>
-                      <Button
-                        size="small"
-                        variant="outlined"
-                        color="primary"
-                        startIcon={<EditIcon />}
-                        onClick={() => handleEdit(expense)}
-                        sx={{ textTransform: 'none', fontSize: '0.8rem' }}
-                      >
-                        Edit
-                      </Button>
-                      <Button
-                        size="small"
-                        variant="outlined"
-                        color="error"
-                        startIcon={<DeleteIcon />}
-                        onClick={() => handleDelete(expense.id)}
-                        sx={{ textTransform: 'none', fontSize: '0.8rem' }}
-                      >
-                        Delete
-                      </Button>
-                    </Box>
+                      {expense.vendor && (
+                        <Typography variant="body2" sx={{ fontSize: '0.85rem' }}>
+                          🏪 <strong>Vendor:</strong> {expense.vendor}
+                        </Typography>
+                      )}
+                      {(expense.description || expense.notes) && (
+                        <Typography variant="body2" color="text.secondary" sx={{ fontSize: '0.8rem', fontStyle: 'italic' }}>
+                          💬 {expense.description || expense.notes}
+                        </Typography>
+                      )}
+                    </Stack>
                   </CardContent>
+                  
+                  {/* Action Buttons - Always Visible at Bottom */}
+                  <CardActions sx={{ 
+                    justifyContent: 'flex-end', 
+                    px: 2, 
+                    pb: 2, 
+                    pt: 0,
+                    bgcolor: 'rgba(255,255,255,0.7)'
+                  }}>
+                    <Button
+                      size="medium"
+                      variant="contained"
+                      color="primary"
+                      startIcon={<EditIcon />}
+                      onClick={() => handleEdit(expense)}
+                      sx={{ 
+                        flex: 1,
+                        fontSize: '0.95rem',
+                        fontWeight: 600,
+                        textTransform: 'none',
+                        borderRadius: 2
+                      }}
+                    >
+                      Edit
+                    </Button>
+                    <Button
+                      size="medium"
+                      variant="outlined"
+                      color="error"
+                      startIcon={<DeleteIcon />}
+                      onClick={() => handleDelete(expense.id)}
+                      sx={{ 
+                        flex: 1,
+                        fontSize: '0.95rem',
+                        fontWeight: 600,
+                        textTransform: 'none',
+                        borderRadius: 2
+                      }}
+                    >
+                      Delete
+                    </Button>
+                  </CardActions>
                 </Card>
               );
             })}
           </Stack>
         ) : (
-          // TABLE VIEW with Color-Coded Rows (Desktop only)
+          // TABLE VIEW - For Desktop/Tablet
           <TableContainer sx={{ maxHeight: 'calc(100vh - 250px)', overflowX: 'auto' }}>
             <Table stickyHeader size="small">
               <TableHead>

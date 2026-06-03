@@ -30,6 +30,55 @@ const DEFAULT_CATEGORIES = [
 
 const DEFAULT_PAYMENT_METHODS = ['Cash', 'Bank Transfer', 'Credit Card', 'Debit Card', 'Check', 'Online Payment'];
 
+// Cache configuration
+const CACHE_KEY = 'expense_cache';
+const CACHE_TIMESTAMP_KEY = 'expense_cache_timestamp';
+const CACHE_EXPIRY_MINUTES = 5; // Cache expires after 5 minutes
+
+// Cache helper functions
+const getCachedData = () => {
+  try {
+    const cachedData = localStorage.getItem(CACHE_KEY);
+    const timestamp = localStorage.getItem(CACHE_TIMESTAMP_KEY);
+    
+    if (!cachedData || !timestamp) {
+      return null;
+    }
+    
+    const cacheAge = Date.now() - parseInt(timestamp);
+    const cacheExpiryMs = CACHE_EXPIRY_MINUTES * 60 * 1000;
+    
+    if (cacheAge > cacheExpiryMs) {
+      console.log('⚠️ Cache expired, will fetch from Firestore');
+      localStorage.removeItem(CACHE_KEY);
+      localStorage.removeItem(CACHE_TIMESTAMP_KEY);
+      return null;
+    }
+    
+    console.log(`✅ Using cached data (age: ${Math.floor(cacheAge / 1000)}s)`);
+    return JSON.parse(cachedData);
+  } catch (error) {
+    console.error('❌ Error reading cache:', error);
+    return null;
+  }
+};
+
+const setCachedData = (data) => {
+  try {
+    localStorage.setItem(CACHE_KEY, JSON.stringify(data));
+    localStorage.setItem(CACHE_TIMESTAMP_KEY, Date.now().toString());
+    console.log('✅ Data cached successfully');
+  } catch (error) {
+    console.error('❌ Error setting cache:', error);
+  }
+};
+
+const clearCache = () => {
+  localStorage.removeItem(CACHE_KEY);
+  localStorage.removeItem(CACHE_TIMESTAMP_KEY);
+  console.log('🗑️ Cache cleared');
+};
+
 export const ExpenseProvider = ({ children }) => {
   const [expenses, setExpenses] = useState([]);
   const [categories, setCategories] = useState(DEFAULT_CATEGORIES);
@@ -38,61 +87,99 @@ export const ExpenseProvider = ({ children }) => {
 
   const [paymentMethods, setPaymentMethods] = useState(DEFAULT_PAYMENT_METHODS);
   const [budget, setBudget] = useState({ total: 0, categories: {} });
+  const [lastSync, setLastSync] = useState(null);
 
-  // Load data from Firestore on mount
-  useEffect(() => {
-    const loadData = async () => {
-      setLoading(true);
-      try {
-        console.log('🔥 Loading data from Firestore...');
-        
-        // Load expenses
-        const expensesQuery = query(collection(db, 'expenses'), orderBy('date', 'desc'));
-        const expensesSnapshot = await getDocs(expensesQuery);
-        const expensesData = expensesSnapshot.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data(),
-          date: doc.data().date || new Date().toISOString().split('T')[0]
-        }));
-        setExpenses(expensesData);
-        console.log(`✅ Loaded ${expensesData.length} expenses from Firestore`);
-
-        // Load categories
-        const categoriesSnapshot = await getDocs(collection(db, 'categories'));
-        const categoriesData = categoriesSnapshot.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data()
-        }));
-        if (categoriesData.length > 0) {
-          setCategories(categoriesData);
+  // Load data from Firestore or cache
+  const loadData = async (forceRefresh = false) => {
+    setLoading(true);
+    try {
+      // Try to use cached data first (unless force refresh)
+      if (!forceRefresh) {
+        const cachedData = getCachedData();
+        if (cachedData) {
+          setExpenses(cachedData.expenses || []);
+          setCategories(cachedData.categories || DEFAULT_CATEGORIES);
+          setVendors(cachedData.vendors || []);
+          setPaymentMethods(cachedData.paymentMethods || DEFAULT_PAYMENT_METHODS);
+          setBudget(cachedData.budget || { total: 0, categories: {} });
+          setLastSync(new Date(parseInt(localStorage.getItem(CACHE_TIMESTAMP_KEY))));
+          setLoading(false);
+          return;
         }
-
-        // Load vendors
-        const vendorsSnapshot = await getDocs(collection(db, 'vendors'));
-        const vendorsData = vendorsSnapshot.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data()
-        }));
-        setVendors(vendorsData);
-
-        // Load settings
-        const settingsSnapshot = await getDocs(collection(db, 'settings'));
-        if (!settingsSnapshot.empty) {
-          const settingsData = settingsSnapshot.docs[0].data();
-          if (settingsData.paymentMethods) {
-            setPaymentMethods(settingsData.paymentMethods);
-          }
-          if (settingsData.budget) {
-            setBudget({ total: settingsData.budget, categories: {} });
-          }
-        }
-      } catch (error) {
-        console.error('❌ Error loading data from Firestore:', error);
-      } finally {
-        setLoading(false);
       }
-    };
+      
+      console.log('🔥 Loading data from Firestore...');
+      
+      // Load expenses
+      const expensesQuery = query(collection(db, 'expenses'), orderBy('date', 'desc'));
+      const expensesSnapshot = await getDocs(expensesQuery);
+      const expensesData = expensesSnapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data(),
+        date: doc.data().date || new Date().toISOString().split('T')[0]
+      }));
+      setExpenses(expensesData);
+      console.log(`✅ Loaded ${expensesData.length} expenses from Firestore`);
 
+      // Load categories
+      const categoriesSnapshot = await getDocs(collection(db, 'categories'));
+      const categoriesData = categoriesSnapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+      const finalCategories = categoriesData.length > 0 ? categoriesData : DEFAULT_CATEGORIES;
+      setCategories(finalCategories);
+
+      // Load vendors
+      const vendorsSnapshot = await getDocs(collection(db, 'vendors'));
+      const vendorsData = vendorsSnapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+      setVendors(vendorsData);
+
+      // Load settings
+      let finalPaymentMethods = DEFAULT_PAYMENT_METHODS;
+      let finalBudget = { total: 0, categories: {} };
+      const settingsSnapshot = await getDocs(collection(db, 'settings'));
+      if (!settingsSnapshot.empty) {
+        const settingsData = settingsSnapshot.docs[0].data();
+        if (settingsData.paymentMethods) {
+          finalPaymentMethods = settingsData.paymentMethods;
+          setPaymentMethods(settingsData.paymentMethods);
+        }
+        if (settingsData.budget) {
+          finalBudget = { total: settingsData.budget, categories: {} };
+          setBudget(finalBudget);
+        }
+      }
+
+      // Cache the loaded data
+      setCachedData({
+        expenses: expensesData,
+        categories: finalCategories,
+        vendors: vendorsData,
+        paymentMethods: finalPaymentMethods,
+        budget: finalBudget
+      });
+      setLastSync(new Date());
+      
+    } catch (error) {
+      console.error('❌ Error loading data from Firestore:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Manual refresh function
+  const refreshData = async () => {
+    console.log('🔄 Manual refresh triggered');
+    clearCache();
+    await loadData(true);
+  };
+
+  // Load data on mount
+  useEffect(() => {
     loadData();
   }, []);
 
@@ -107,8 +194,14 @@ export const ExpenseProvider = ({ children }) => {
       
       const docRef = await addDoc(collection(db, 'expenses'), newExpense);
       const addedExpense = { id: docRef.id, ...newExpense };
-      setExpenses(prev => [addedExpense, ...prev]);
-      console.log('✅ Expense added to Firestore');
+      const updatedExpenses = [addedExpense, ...expenses];
+      setExpenses(updatedExpenses);
+      
+      // Update cache
+      const cachedData = getCachedData() || {};
+      setCachedData({ ...cachedData, expenses: updatedExpenses });
+      
+      console.log('✅ Expense added to Firestore and cache');
       return addedExpense;
     } catch (error) {
       console.error('❌ Error adding expense:', error);
@@ -121,10 +214,16 @@ export const ExpenseProvider = ({ children }) => {
       const expenseRef = doc(db, 'expenses', id);
       const updatedData = { ...updates, updatedAt: new Date() };
       await updateDoc(expenseRef, updatedData);
-      setExpenses(prev => prev.map(exp => 
+      const updatedExpenses = expenses.map(exp => 
         exp.id === id ? { ...exp, ...updatedData } : exp
-      ));
-      console.log('✅ Expense updated in Firestore');
+      );
+      setExpenses(updatedExpenses);
+      
+      // Update cache
+      const cachedData = getCachedData() || {};
+      setCachedData({ ...cachedData, expenses: updatedExpenses });
+      
+      console.log('✅ Expense updated in Firestore and cache');
     } catch (error) {
       console.error('❌ Error updating expense:', error);
       throw error;
@@ -134,8 +233,14 @@ export const ExpenseProvider = ({ children }) => {
   const deleteExpense = async (id) => {
     try {
       await deleteDoc(doc(db, 'expenses', id));
-      setExpenses(prev => prev.filter(exp => exp.id !== id));
-      console.log('✅ Expense deleted from Firestore');
+      const updatedExpenses = expenses.filter(exp => exp.id !== id);
+      setExpenses(updatedExpenses);
+      
+      // Update cache
+      const cachedData = getCachedData() || {};
+      setCachedData({ ...cachedData, expenses: updatedExpenses });
+      
+      console.log('✅ Expense deleted from Firestore and cache');
     } catch (error) {
       console.error('❌ Error deleting expense:', error);
       throw error;
@@ -295,12 +400,16 @@ export const ExpenseProvider = ({ children }) => {
     paymentMethods,
     budget,
     loading,
+    lastSync,
     
     // Expense operations
     addExpense,
     updateExpense,
     deleteExpense,
     bulkAddExpenses,
+    
+    // Data refresh
+    refreshData,
     
     // Category operations
     addCategory,
