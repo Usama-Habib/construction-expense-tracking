@@ -218,9 +218,12 @@ const ExpenseEntry = () => {
         }
       }
       
-      // Auto-fill paid amount when total amount is entered (if paid is empty)
-      if (name === 'totalAmount' && value && (!prev.paidAmount || prev.paidAmount === '0' || prev.paidAmount === '')) {
-        updated.paidAmount = value;
+      // Auto-fill paid amount when total amount is entered
+      // Update paidAmount if it's empty, zero, or matches the previous totalAmount (was auto-filled)
+      if (name === 'totalAmount' && value) {
+        if (!prev.paidAmount || prev.paidAmount === '0' || prev.paidAmount === '' || prev.paidAmount === prev.totalAmount) {
+          updated.paidAmount = value;
+        }
       }
       
       // Auto-calculate remaining amount and payment status
