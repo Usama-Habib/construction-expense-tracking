@@ -67,6 +67,7 @@ const ExpenseEntry = () => {
 
   const [editingId, setEditingId] = useState(null);
   const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' });
+  const [paidAmountManuallyEdited, setPaidAmountManuallyEdited] = useState(false);
   
   // Filter state
   const [filters, setFilters] = useState({
@@ -199,6 +200,11 @@ const ExpenseEntry = () => {
   const handleChange = (e) => {
     const { name, value } = e.target;
     
+    // Track if user manually edits paid amount
+    if (name === 'paidAmount') {
+      setPaidAmountManuallyEdited(true);
+    }
+    
     setFormData(prev => {
       const updated = {
         ...prev,
@@ -214,33 +220,30 @@ const ExpenseEntry = () => {
           const calculatedTotal = quantity * rate;
           updated.totalAmount = calculatedTotal.toFixed(2);
           // Also update paid amount to match (user can change it later)
-          updated.paidAmount = calculatedTotal.toFixed(2);
+          if (!paidAmountManuallyEdited) {
+            updated.paidAmount = calculatedTotal.toFixed(2);
+          }
         }
       }
       
-      // Auto-fill paid amount when total amount is entered
-      // Update paidAmount if it's empty, zero, or matches the previous totalAmount (was auto-filled)
-      if (name === 'totalAmount' && value) {
-        if (!prev.paidAmount || prev.paidAmount === '0' || prev.paidAmount === '' || prev.paidAmount === prev.totalAmount) {
-          updated.paidAmount = value;
-        }
+      // Auto-fill paid amount when total amount changes (UNLESS user manually edited paid)
+      if (name === 'totalAmount' && !paidAmountManuallyEdited) {
+        updated.paidAmount = value;
       }
       
       // Auto-calculate remaining amount and payment status
-      if (name === 'totalAmount' || name === 'paidAmount' || name === 'quantity' || name === 'rate') {
-        const total = parseFloat(updated.totalAmount) || 0;
-        const paid = parseFloat(updated.paidAmount) || 0;
-        const remaining = total - paid;
-        updated.remainingAmount = remaining > 0.001 ? remaining.toFixed(2) : '0';
-        
-        // Auto-calculate payment status
-        if (paid >= total && total > 0) {
-          updated.paymentStatus = 'Clear';
-        } else if (paid > 0 && paid < total) {
-          updated.paymentStatus = 'Partial';
-        } else if (paid === 0 || total === 0) {
-          updated.paymentStatus = 'Pending';
-        }
+      const total = parseFloat(updated.totalAmount) || 0;
+      const paid = parseFloat(updated.paidAmount) || 0;
+      const remaining = total - paid;
+      updated.remainingAmount = remaining > 0.001 ? remaining.toFixed(2) : '0';
+      
+      // Auto-calculate payment status
+      if (paid >= total && total > 0) {
+        updated.paymentStatus = 'Clear';
+      } else if (paid > 0 && paid < total) {
+        updated.paymentStatus = 'Partial';
+      } else if (paid === 0 || total === 0) {
+        updated.paymentStatus = 'Pending';
       }
       
       return updated;
@@ -353,6 +356,7 @@ const ExpenseEntry = () => {
       unit: '',
       rate: '',
     });
+    setPaidAmountManuallyEdited(false);
     setShowForm(false);
     setQuickAddMode(false);
   };
@@ -417,6 +421,7 @@ const ExpenseEntry = () => {
       unit: expense.unit || '',
       rate: expense.rate || '',
     });
+    setPaidAmountManuallyEdited(true); // Treat existing data as manually set
     setEditingId(expense.id);
     setShowForm(true);
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -433,6 +438,7 @@ const ExpenseEntry = () => {
     setEditingId(null);
     setShowForm(false);
     setQuickAddMode(false);
+    setPaidAmountManuallyEdited(false);
     setFormData({
       date: new Date().toISOString().split('T')[0],
       category: '',
