@@ -58,7 +58,7 @@ const ExpenseEntry = () => {
     remainingAmount: '',
     paymentMethod: '',
     area: '',
-    paymentStatus: 'Clear',
+    paymentStatus: 'Pending',
     notes: '',
     quantity: '',
     unit: '',
@@ -218,12 +218,26 @@ const ExpenseEntry = () => {
         }
       }
       
-      // Auto-calculate remaining amount when total or paid changes
+      // Auto-fill paid amount when total amount is entered (if paid is empty)
+      if (name === 'totalAmount' && value && (!prev.paidAmount || prev.paidAmount === '0' || prev.paidAmount === '')) {
+        updated.paidAmount = value;
+      }
+      
+      // Auto-calculate remaining amount and payment status
       if (name === 'totalAmount' || name === 'paidAmount' || name === 'quantity' || name === 'rate') {
         const total = parseFloat(updated.totalAmount) || 0;
         const paid = parseFloat(updated.paidAmount) || 0;
         const remaining = total - paid;
-        updated.remainingAmount = remaining > 0.001 ? remaining.toString() : '0';
+        updated.remainingAmount = remaining > 0.001 ? remaining.toFixed(2) : '0';
+        
+        // Auto-calculate payment status
+        if (paid >= total && total > 0) {
+          updated.paymentStatus = 'Clear';
+        } else if (paid > 0 && paid < total) {
+          updated.paymentStatus = 'Partial';
+        } else if (paid === 0 || total === 0) {
+          updated.paymentStatus = 'Pending';
+        }
       }
       
       return updated;
@@ -330,7 +344,7 @@ const ExpenseEntry = () => {
       remainingAmount: '',
       paymentMethod: '',
       area: '',
-      paymentStatus: 'Clear',
+      paymentStatus: 'Pending',
       notes: '',
       quantity: '',
       unit: '',
@@ -370,10 +384,18 @@ const ExpenseEntry = () => {
       formattedDate = new Date().toISOString().split('T')[0];
     }
     
-    // Calculate remaining amount correctly
+    // Calculate remaining amount and payment status correctly
     const totalAmt = parseFloat(expense.totalAmount || expense.amount) || 0;
     const paidAmt = parseFloat(expense.paidAmount || expense.totalAmount || expense.amount) || 0;
     const remainingAmt = totalAmt - paidAmt;
+    
+    // Auto-calculate payment status based on amounts
+    let calculatedStatus = 'Pending';
+    if (paidAmt >= totalAmt && totalAmt > 0) {
+      calculatedStatus = 'Clear';
+    } else if (paidAmt > 0 && paidAmt < totalAmt) {
+      calculatedStatus = 'Partial';
+    }
     
     setFormData({
       date: formattedDate,
@@ -383,10 +405,10 @@ const ExpenseEntry = () => {
       description: expense.description || '',
       totalAmount: expense.totalAmount || expense.amount || '',
       paidAmount: expense.paidAmount || expense.totalAmount || expense.amount || '',
-      remainingAmount: remainingAmt > 0.001 ? remainingAmt.toString() : '0',
+      remainingAmount: remainingAmt > 0.001 ? remainingAmt.toFixed(2) : '0',
       paymentMethod: expense.paymentMethod || '',
       area: expense.area || '',
-      paymentStatus: expense.paymentStatus || 'Clear',
+      paymentStatus: calculatedStatus,
       notes: expense.notes || '',
       quantity: expense.quantity || '',
       unit: expense.unit || '',
@@ -419,7 +441,7 @@ const ExpenseEntry = () => {
       remainingAmount: '',
       paymentMethod: '',
       area: '',
-      paymentStatus: 'Clear',
+      paymentStatus: 'Pending',
       notes: '',
       quantity: '',
       unit: '',
@@ -749,24 +771,25 @@ const ExpenseEntry = () => {
               </Select>
             </FormControl>
 
-            {/* Payment Status */}
+            {/* Payment Status (Auto-calculated) */}
             <FormControl fullWidth>
-              <InputLabel id="form-payment-status-label">✅ Payment Status</InputLabel>
+              <InputLabel id="form-payment-status-label">✅ Payment Status (Auto-set)</InputLabel>
               <Select
                 labelId="form-payment-status-label"
                 id="form-payment-status"
                 name="paymentStatus"
                 value={formData.paymentStatus}
                 onChange={handleChange}
-                label="✅ Payment Status"
+                label="✅ Payment Status (Auto-set)"
                 sx={{
                   fontSize: { xs: '1.1rem', sm: '1rem' },
-                  height: { xs: '56px', sm: '56px' }
+                  height: { xs: '56px', sm: '56px' },
+                  backgroundColor: '#f5f5f5'
                 }}
               >
-                <MenuItem value="Clear">✅ Clear</MenuItem>
-                <MenuItem value="Partial">⚠️ Partial</MenuItem>
-                <MenuItem value="Pending">⏳ Pending</MenuItem>
+                <MenuItem value="Clear">✅ Clear (Fully Paid)</MenuItem>
+                <MenuItem value="Partial">⚠️ Partial (Partially Paid)</MenuItem>
+                <MenuItem value="Pending">⏳ Pending (Not Paid)</MenuItem>
               </Select>
             </FormControl>
 
