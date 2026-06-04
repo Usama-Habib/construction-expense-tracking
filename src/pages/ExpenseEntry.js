@@ -11,7 +11,6 @@ import {
   Card,
   CardContent,
   CardActions,
-  Divider,
   Stack,
   Chip,
   IconButton,
@@ -24,8 +23,6 @@ import {
   TableContainer,
   TableHead,
   TableRow,
-  ToggleButtonGroup,
-  ToggleButton,
   Fab,
   Select,
   MenuItem,
@@ -36,11 +33,7 @@ import DeleteIcon from '@mui/icons-material/Delete';
 import EditIcon from '@mui/icons-material/Edit';
 import AddIcon from '@mui/icons-material/Add';
 import CancelIcon from '@mui/icons-material/Cancel';
-import AttachMoneyIcon from '@mui/icons-material/AttachMoney';
-import ViewListIcon from '@mui/icons-material/ViewList';
-import ViewModuleIcon from '@mui/icons-material/ViewModule';
 import SearchIcon from '@mui/icons-material/Search';
-import FilterListIcon from '@mui/icons-material/FilterList';
 import SpeedIcon from '@mui/icons-material/Speed';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import ExpandLessIcon from '@mui/icons-material/ExpandLess';
@@ -49,9 +42,8 @@ import { useExpense } from '../contexts/ExpenseContext';
 const ExpenseEntry = () => {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
-  const { expenses, categories, paymentMethods, addExpense, updateExpense, deleteExpense } = useExpense();
+  const { expenses, categories, paymentMethods, addExpense, updateExpense, deleteExpense, refreshData, validateAndCleanExpenses } = useExpense();
   
-  const [viewMode, setViewMode] = useState('table'); // 'table' or 'card'
   const [showForm, setShowForm] = useState(false); // Hide form by default
   const [showFilters, setShowFilters] = useState(!isMobile); // Auto-hide on mobile
   const [quickAddMode, setQuickAddMode] = useState(false); // Quick add mode
@@ -70,6 +62,7 @@ const ExpenseEntry = () => {
     notes: '',
     quantity: '',
     unit: '',
+    rate: '',
   });
 
   const [editingId, setEditingId] = useState(null);
@@ -102,13 +95,12 @@ const ExpenseEntry = () => {
     return 0;
   };
   const getRemainingAmount = (exp) => {
-    if (exp.remainingAmount !== undefined && exp.remainingAmount !== null && exp.remainingAmount !== '') {
-      return parseFloat(exp.remainingAmount) || 0;
-    }
-    // Calculate remaining from total - paid
+    // Always calculate remaining from total - paid (ignore manual entry)
     const total = getAmount(exp);
     const paid = getPaidAmount(exp);
-    return Math.max(0, total - paid);
+    const remaining = total - paid;
+    // Return 0 if remaining is negative or very small (to handle floating point errors)
+    return remaining > 0.001 ? remaining : 0;
   };
 
   // Get status color
@@ -206,14 +198,39 @@ const ExpenseEntry = () => {
 
   const handleChange = (e) => {
     const { name, value } = e.target;
-    setFormData(prev => ({
-      ...prev,
-      [name]: value,
-      ...(name === 'category' && { subCategory: '' })
-    }));
+    
+    setFormData(prev => {
+      const updated = {
+        ...prev,
+        [name]: value,
+        ...(name === 'category' && { subCategory: '' })
+      };
+      
+      // Auto-calculate total amount when quantity or rate changes
+      if (name === 'quantity' || name === 'rate') {
+        const quantity = parseFloat(name === 'quantity' ? value : updated.quantity) || 0;
+        const rate = parseFloat(name === 'rate' ? value : updated.rate) || 0;
+        if (quantity > 0 && rate > 0) {
+          const calculatedTotal = quantity * rate;
+          updated.totalAmount = calculatedTotal.toFixed(2);
+          // Also update paid amount to match (user can change it later)
+          updated.paidAmount = calculatedTotal.toFixed(2);
+        }
+      }
+      
+      // Auto-calculate remaining amount when total or paid changes
+      if (name === 'totalAmount' || name === 'paidAmount' || name === 'quantity' || name === 'rate') {
+        const total = parseFloat(updated.totalAmount) || 0;
+        const paid = parseFloat(updated.paidAmount) || 0;
+        const remaining = total - paid;
+        updated.remainingAmount = remaining > 0.001 ? remaining.toString() : '0';
+      }
+      
+      return updated;
+    });
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     
     if (!formData.date || !formData.category || !formData.totalAmount) {
@@ -227,12 +244,78 @@ const ExpenseEntry = () => {
     }
 
     if (editingId) {
-      updateExpense(editingId, formData);
-      setSnackbar({ open: true, message: '✓ Expense updated!', severity: 'success' });
-      setEditingId(null);
+      try {
+        // Verify the expense exists in local state
+        const expenseExists = expenses.find(exp => exp.id === editingId);
+        if (!expenseExists) {
+          console.warn('⚠️ Expense not found in local state, refreshing data...');
+          await refreshData();
+          setSnackbar({ 
+            open: true, 
+            message: '⚠️ Data refreshed. Please try editing again.', 
+            severity: 'warning' 
+          });
+          handleCancelEdit();
+          return;
+        }
+        
+        await updateExpense(editingId, formData);
+        setSnackbar({ open: true, message: '✓ Expense updated!', severity: 'success' });
+        setEditingId(null);
+      } catch (error) {
+        console.error('❌ Error in handleSubmit:', error);
+        
+        // If error mentions "not found" or "does not exist", refresh data
+        if (error.message && (error.message.includes('not found') || error.message.includes('does not exist') || error.message.includes('deleted or never saved'))) {
+          // Try to clean up orphaned expenses
+          try {
+            const cleanupResult = await validateAndCleanExpenses();
+            if (cleanupResult.cleaned) {
+              setSnackbar({ 
+                open: true, 
+                message: `🧹 Cleaned up ${cleanupResult.count} invalid expense(s). Please select a valid expense to edit.`, 
+                severity: 'warning' 
+              });
+            } else {
+              await refreshData();
+              setSnackbar({ 
+                open: true, 
+                message: '⚠️ ' + error.message, 
+                severity: 'warning' 
+              });
+            }
+          } catch (cleanupError) {
+            console.error('Failed to cleanup:', cleanupError);
+            await refreshData();
+            setSnackbar({ 
+              open: true, 
+              message: '⚠️ Data refreshed. Please try again.', 
+              severity: 'warning' 
+            });
+          }
+          handleCancelEdit();
+        } else {
+          setSnackbar({ 
+            open: true, 
+            message: error.message || 'Failed to update expense', 
+            severity: 'error' 
+          });
+        }
+        return;
+      }
     } else {
-      addExpense(formData);
-      setSnackbar({ open: true, message: '✓ Expense added!', severity: 'success' });
+      try {
+        await addExpense(formData);
+        setSnackbar({ open: true, message: '✓ Expense added!', severity: 'success' });
+      } catch (error) {
+        console.error('❌ Error adding expense:', error);
+        setSnackbar({ 
+          open: true, 
+          message: 'Failed to add expense', 
+          severity: 'error' 
+        });
+        return;
+      }
     }
 
     // Reset form and hide it
@@ -249,25 +332,65 @@ const ExpenseEntry = () => {
       area: '',
       paymentStatus: 'Clear',
       notes: '',
+      quantity: '',
+      unit: '',
+      rate: '',
     });
     setShowForm(false);
     setQuickAddMode(false);
   };
 
   const handleEdit = (expense) => {
+    if (!expense.id) {
+      console.error('❌ Invalid expense: missing ID');
+      setSnackbar({ 
+        open: true, 
+        message: 'Cannot edit: Invalid expense data', 
+        severity: 'error' 
+      });
+      return;
+    }
+    
+    // Ensure date is in proper YYYY-MM-DD format for input field
+    let formattedDate = expense.date;
+    if (expense.date) {
+      // Handle Firestore Timestamp, Date object, or string
+      if (typeof expense.date.toDate === 'function') {
+        // Firestore Timestamp
+        formattedDate = expense.date.toDate().toISOString().split('T')[0];
+      } else if (expense.date instanceof Date) {
+        // JavaScript Date object
+        formattedDate = expense.date.toISOString().split('T')[0];
+      } else if (typeof expense.date === 'string') {
+        // String - ensure it's in YYYY-MM-DD format
+        formattedDate = expense.date.split('T')[0];
+      }
+    } else {
+      // Default to today if no date
+      formattedDate = new Date().toISOString().split('T')[0];
+    }
+    
+    // Calculate remaining amount correctly
+    const totalAmt = parseFloat(expense.totalAmount || expense.amount) || 0;
+    const paidAmt = parseFloat(expense.paidAmount || expense.totalAmount || expense.amount) || 0;
+    const remainingAmt = totalAmt - paidAmt;
+    
     setFormData({
-      date: expense.date,
+      date: formattedDate,
       category: expense.category,
       subCategory: expense.subCategory || '',
       vendor: expense.vendor || '',
       description: expense.description || '',
       totalAmount: expense.totalAmount || expense.amount || '',
       paidAmount: expense.paidAmount || expense.totalAmount || expense.amount || '',
-      remainingAmount: expense.remainingAmount || '',
+      remainingAmount: remainingAmt > 0.001 ? remainingAmt.toString() : '0',
       paymentMethod: expense.paymentMethod || '',
       area: expense.area || '',
       paymentStatus: expense.paymentStatus || 'Clear',
       notes: expense.notes || '',
+      quantity: expense.quantity || '',
+      unit: expense.unit || '',
+      rate: expense.rate || '',
     });
     setEditingId(expense.id);
     setShowForm(true);
@@ -298,6 +421,9 @@ const ExpenseEntry = () => {
       area: '',
       paymentStatus: 'Clear',
       notes: '',
+      quantity: '',
+      unit: '',
+      rate: '',
     });
   };
 
@@ -441,8 +567,8 @@ const ExpenseEntry = () => {
               }}
             />
 
-            {/* Quantity & Unit - ALWAYS visible (helpful for materials like cement, bricks) */}
-            <Box sx={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 2 }}>
+            {/* Quantity, Unit & Rate - ALWAYS visible (helpful for materials like cement, bricks) */}
+            <Box sx={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1.5fr', gap: 2 }}>
               <TextField
                 fullWidth
                 label="📦 Quantity"
@@ -451,7 +577,7 @@ const ExpenseEntry = () => {
                 value={formData.quantity}
                 onChange={handleChange}
                 inputProps={{ min: 0, step: 0.01 }}
-                placeholder="e.g., 50"
+                placeholder="e.g., 3000"
                 sx={{
                   '& .MuiInputBase-root': {
                     fontSize: { xs: '1rem', sm: '1rem' },
@@ -466,6 +592,23 @@ const ExpenseEntry = () => {
                 value={formData.unit}
                 onChange={handleChange}
                 placeholder="e.g., bags, pcs"
+                sx={{
+                  '& .MuiInputBase-root': {
+                    fontSize: { xs: '1rem', sm: '1rem' },
+                    height: { xs: '56px', sm: '56px' }
+                  }
+                }}
+              />
+              <TextField
+                fullWidth
+                label="💰 Rate/Unit"
+                name="rate"
+                type="number"
+                value={formData.rate}
+                onChange={handleChange}
+                inputProps={{ min: 0, step: 0.01 }}
+                placeholder="e.g., 12.5"
+                helperText={formData.quantity && formData.rate ? `Total: ${(parseFloat(formData.quantity) * parseFloat(formData.rate)).toFixed(2)}` : ''}
                 sx={{
                   '& .MuiInputBase-root': {
                     fontSize: { xs: '1rem', sm: '1rem' },
@@ -537,20 +680,21 @@ const ExpenseEntry = () => {
               }}
             />
 
-            {/* Remaining Amount */}
+            {/* Remaining Amount (Auto-calculated) */}
             <TextField
               fullWidth
-              label="⏳ Remaining Amount"
+              label="⏳ Remaining Amount (Auto-calculated)"
               name="remainingAmount"
               type="number"
               value={formData.remainingAmount}
-              onChange={handleChange}
+              InputProps={{ readOnly: true }}
               inputProps={{ min: 0, step: 0.01 }}
               placeholder="0.00"
               sx={{
                 '& .MuiInputBase-root': {
                   fontSize: { xs: '1rem', sm: '1rem' },
-                  height: { xs: '56px', sm: '56px' }
+                  height: { xs: '56px', sm: '56px' },
+                  backgroundColor: '#f5f5f5'
                 }
               }}
             />
@@ -1031,6 +1175,11 @@ const ExpenseEntry = () => {
                       {expense.quantity && (
                         <Typography variant="body2" sx={{ fontSize: '0.85rem' }}>
                           📦 <strong>Quantity:</strong> {expense.quantity}{expense.unit ? ' ' + expense.unit : ''}
+                          {expense.rate && (
+                            <span style={{ color: '#666', marginLeft: '8px' }}>
+                              @ {parseFloat(expense.rate).toFixed(2)}/unit = {(parseFloat(expense.quantity) * parseFloat(expense.rate)).toFixed(2)}
+                            </span>
+                          )}
                         </Typography>
                       )}
                       {expense.area && (
@@ -1150,7 +1299,16 @@ const ExpenseEntry = () => {
                         {expense.subCategory || '-'}
                       </TableCell>
                       <TableCell sx={{ fontSize: '0.8rem', fontWeight: 500 }}>
-                        {expense.quantity ? `${expense.quantity}${expense.unit ? ' ' + expense.unit : ''}` : '-'}
+                        {expense.quantity ? (
+                          <span>
+                            {expense.quantity}{expense.unit ? ' ' + expense.unit : ''}
+                            {expense.rate && (
+                              <span style={{ display: 'block', fontSize: '0.7rem', color: '#666' }}>
+                                @ {parseFloat(expense.rate).toFixed(2)}
+                              </span>
+                            )}
+                          </span>
+                        ) : '-'}
                       </TableCell>
                       <TableCell sx={{ fontWeight: 700, color: 'primary.main', fontSize: '0.95rem' }}>
                         {totalAmt.toLocaleString()}

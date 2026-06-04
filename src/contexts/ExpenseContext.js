@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useEffect } from 'react';
 import {
   collection,
   getDocs,
+  getDoc,
   addDoc,
   updateDoc,
   deleteDoc,
@@ -49,13 +50,11 @@ const getCachedData = () => {
     const cacheExpiryMs = CACHE_EXPIRY_MINUTES * 60 * 1000;
     
     if (cacheAge > cacheExpiryMs) {
-      console.log('⚠️ Cache expired, will fetch from Firestore');
       localStorage.removeItem(CACHE_KEY);
       localStorage.removeItem(CACHE_TIMESTAMP_KEY);
       return null;
     }
     
-    console.log(`✅ Using cached data (age: ${Math.floor(cacheAge / 1000)}s)`);
     return JSON.parse(cachedData);
   } catch (error) {
     console.error('❌ Error reading cache:', error);
@@ -67,7 +66,6 @@ const setCachedData = (data) => {
   try {
     localStorage.setItem(CACHE_KEY, JSON.stringify(data));
     localStorage.setItem(CACHE_TIMESTAMP_KEY, Date.now().toString());
-    console.log('✅ Data cached successfully');
   } catch (error) {
     console.error('❌ Error setting cache:', error);
   }
@@ -76,7 +74,6 @@ const setCachedData = (data) => {
 const clearCache = () => {
   localStorage.removeItem(CACHE_KEY);
   localStorage.removeItem(CACHE_TIMESTAMP_KEY);
-  console.log('🗑️ Cache cleared');
 };
 
 export const ExpenseProvider = ({ children }) => {
@@ -108,18 +105,20 @@ export const ExpenseProvider = ({ children }) => {
         }
       }
       
-      console.log('🔥 Loading data from Firestore...');
-      
       // Load expenses
       const expensesQuery = query(collection(db, 'expenses'), orderBy('date', 'desc'));
       const expensesSnapshot = await getDocs(expensesQuery);
-      const expensesData = expensesSnapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data(),
-        date: doc.data().date || new Date().toISOString().split('T')[0]
-      }));
+      const expensesData = expensesSnapshot.docs.map(doc => {
+        const data = doc.data();
+        // Always use Firestore document ID, not any custom id field
+        return {
+          ...data,
+          id: doc.id, // Override any custom id field with Firestore document ID
+          customId: data.id, // Preserve original custom ID if it exists
+          date: data.date || new Date().toISOString().split('T')[0]
+        };
+      });
       setExpenses(expensesData);
-      console.log(`✅ Loaded ${expensesData.length} expenses from Firestore`);
 
       // Load categories
       const categoriesSnapshot = await getDocs(collection(db, 'categories'));
@@ -173,9 +172,42 @@ export const ExpenseProvider = ({ children }) => {
 
   // Manual refresh function
   const refreshData = async () => {
-    console.log('🔄 Manual refresh triggered');
     clearCache();
     await loadData(true);
+  };
+
+  // Validate and clean up orphaned expenses (exist locally but not in Firestore)
+  const validateAndCleanExpenses = async () => {
+    try {
+      // Get all Firestore expense IDs
+      const expensesSnapshot = await getDocs(collection(db, 'expenses'));
+      const firestoreIds = new Set(expensesSnapshot.docs.map(doc => doc.id));
+      
+      // Get local expense IDs
+      const localIds = expenses.map(e => e.id);
+      
+      // Find orphaned IDs (in local but not in Firestore)
+      const orphanedIds = localIds.filter(id => !firestoreIds.has(id));
+      
+      if (orphanedIds.length > 0) {
+        console.warn(`⚠️ Found ${orphanedIds.length} orphaned expenses:`, orphanedIds);
+        
+        // Remove orphaned expenses from local state
+        const cleanedExpenses = expenses.filter(exp => firestoreIds.has(exp.id));
+        setExpenses(cleanedExpenses);
+        
+        // Update cache with cleaned data
+        const cachedData = getCachedData() || {};
+        setCachedData({ ...cachedData, expenses: cleanedExpenses });
+        
+        return { cleaned: true, count: orphanedIds.length, ids: orphanedIds };
+      } else {
+        return { cleaned: false, count: 0 };
+      }
+    } catch (error) {
+      console.error('❌ Error validating expenses:', error);
+      throw error;
+    }
   };
 
   // Load data on mount
@@ -183,25 +215,36 @@ export const ExpenseProvider = ({ children }) => {
     loadData();
   }, []);
 
+  // Helper function to sort expenses by date (descending - newest first)
+  const sortExpensesByDate = (expensesArray) => {
+    return [...expensesArray].sort((a, b) => {
+      const dateA = new Date(a.date);
+      const dateB = new Date(b.date);
+      return dateB - dateA; // Descending order (newest first)
+    });
+  };
+
   // Expense CRUD operations
   const addExpense = async (expense) => {
     try {
+      // Remove any custom id field to avoid confusion with Firestore document ID
+      const { id, customId, ...expenseData } = expense;
+      
       const newExpense = {
-        ...expense,
+        ...expenseData,
         createdAt: new Date(),
         updatedAt: new Date()
       };
       
       const docRef = await addDoc(collection(db, 'expenses'), newExpense);
       const addedExpense = { id: docRef.id, ...newExpense };
-      const updatedExpenses = [addedExpense, ...expenses];
+      const updatedExpenses = sortExpensesByDate([addedExpense, ...expenses]);
       setExpenses(updatedExpenses);
       
       // Update cache
       const cachedData = getCachedData() || {};
       setCachedData({ ...cachedData, expenses: updatedExpenses });
       
-      console.log('✅ Expense added to Firestore and cache');
       return addedExpense;
     } catch (error) {
       console.error('❌ Error adding expense:', error);
@@ -211,19 +254,42 @@ export const ExpenseProvider = ({ children }) => {
 
   const updateExpense = async (id, updates) => {
     try {
+      if (!id) {
+        throw new Error('Invalid expense ID: ID is missing or undefined');
+      }
+      
+      // Remove any custom id field to avoid overwriting Firestore document ID
+      const { id: customId, customId: oldCustomId, ...updateData } = updates;
+      
       const expenseRef = doc(db, 'expenses', id);
-      const updatedData = { ...updates, updatedAt: new Date() };
+      
+      // Check if document exists before updating
+      const docSnap = await getDoc(expenseRef);
+      
+      if (!docSnap.exists()) {
+        console.error(`❌ Document with ID "${id}" does not exist in Firestore`);
+        
+        // Clear cache since it's out of sync
+        clearCache();
+        // Refresh data from Firestore
+        await loadData(true);
+        throw new Error(`Expense "${id}" was deleted or never saved to Firestore. Please refresh and try again with a valid expense.`);
+      }
+      
+      const updatedData = { ...updateData, updatedAt: new Date() };
+      
       await updateDoc(expenseRef, updatedData);
-      const updatedExpenses = expenses.map(exp => 
-        exp.id === id ? { ...exp, ...updatedData } : exp
+      
+      const updatedExpenses = sortExpensesByDate(
+        expenses.map(exp => 
+          exp.id === id ? { ...exp, ...updatedData } : exp
+        )
       );
       setExpenses(updatedExpenses);
       
       // Update cache
       const cachedData = getCachedData() || {};
       setCachedData({ ...cachedData, expenses: updatedExpenses });
-      
-      console.log('✅ Expense updated in Firestore and cache');
     } catch (error) {
       console.error('❌ Error updating expense:', error);
       throw error;
@@ -239,8 +305,6 @@ export const ExpenseProvider = ({ children }) => {
       // Update cache
       const cachedData = getCachedData() || {};
       setCachedData({ ...cachedData, expenses: updatedExpenses });
-      
-      console.log('✅ Expense deleted from Firestore and cache');
     } catch (error) {
       console.error('❌ Error deleting expense:', error);
       throw error;
@@ -255,7 +319,8 @@ export const ExpenseProvider = ({ children }) => {
       updatedAt: new Date().toISOString(),
       syncStatus: 'pending'
     }));
-    setExpenses(prev => [...newExpenses, ...prev]);
+    const updatedExpenses = sortExpensesByDate([...newExpenses, ...expenses]);
+    setExpenses(updatedExpenses);
   };
 
   // Category operations
@@ -264,7 +329,6 @@ export const ExpenseProvider = ({ children }) => {
       const docRef = await addDoc(collection(db, 'categories'), category);
       const newCategory = { id: docRef.id, ...category };
       setCategories(prev => [...prev, newCategory]);
-      console.log('✅ Category added to Firestore');
     } catch (error) {
       console.error('❌ Error adding category:', error);
     }
@@ -274,7 +338,6 @@ export const ExpenseProvider = ({ children }) => {
     try {
       await updateDoc(doc(db, 'categories', id), updates);
       setCategories(prev => prev.map(cat => cat.id === id ? { ...cat, ...updates } : cat));
-      console.log('✅ Category updated in Firestore');
     } catch (error) {
       console.error('❌ Error updating category:', error);
     }
@@ -284,7 +347,6 @@ export const ExpenseProvider = ({ children }) => {
     try {
       await deleteDoc(doc(db, 'categories', id));
       setCategories(prev => prev.filter(cat => cat.id !== id));
-      console.log('✅ Category deleted from Firestore');
     } catch (error) {
       console.error('❌ Error deleting category:', error);
     }
@@ -296,7 +358,6 @@ export const ExpenseProvider = ({ children }) => {
       const docRef = await addDoc(collection(db, 'vendors'), { name: vendor, createdAt: new Date() });
       const newVendor = { id: docRef.id, name: vendor };
       setVendors(prev => [...prev, newVendor]);
-      console.log('✅ Vendor added to Firestore');
     } catch (error) {
       console.error('❌ Error adding vendor:', error);
     }
@@ -306,7 +367,6 @@ export const ExpenseProvider = ({ children }) => {
     try {
       await updateDoc(doc(db, 'vendors', id), updates);
       setVendors(prev => prev.map(v => v.id === id ? { ...v, ...updates } : v));
-      console.log('✅ Vendor updated in Firestore');
     } catch (error) {
       console.error('❌ Error updating vendor:', error);
     }
@@ -316,7 +376,6 @@ export const ExpenseProvider = ({ children }) => {
     try {
       await deleteDoc(doc(db, 'vendors', id));
       setVendors(prev => prev.filter(v => v.id !== id));
-      console.log('✅ Vendor deleted from Firestore');
     } catch (error) {
       console.error('❌ Error deleting vendor:', error);
     }
@@ -410,6 +469,7 @@ export const ExpenseProvider = ({ children }) => {
     
     // Data refresh
     refreshData,
+    validateAndCleanExpenses,
     
     // Category operations
     addCategory,
