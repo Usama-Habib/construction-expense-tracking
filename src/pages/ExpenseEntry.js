@@ -28,6 +28,7 @@ import {
   MenuItem,
   FormControl,
   InputLabel,
+  Autocomplete,
 } from '@mui/material';
 import DeleteIcon from '@mui/icons-material/Delete';
 import EditIcon from '@mui/icons-material/Edit';
@@ -42,7 +43,7 @@ import { useExpense } from '../contexts/ExpenseContext';
 const ExpenseEntry = () => {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
-  const { expenses, categories, paymentMethods, addExpense, updateExpense, deleteExpense, refreshData, validateAndCleanExpenses } = useExpense();
+  const { expenses, categories, vendors, paymentMethods, addExpense, updateExpense, deleteExpense, refreshData, validateAndCleanExpenses, addVendor } = useExpense();
   
   const [showForm, setShowForm] = useState(false); // Hide form by default
   const [showFilters, setShowFilters] = useState(!isMobile); // Auto-hide on mobile
@@ -652,24 +653,43 @@ const ExpenseEntry = () => {
             {/* Optional fields - hidden in Quick Add mode */}
             {(!quickAddMode || editingId) && (
             <>
-            {/* Vendor Field */}
-            <TextField
+            {/* Vendor Field - Autocomplete with Add Option */}
+            <Autocomplete
               fullWidth
-              label="🏪 Vendor/Supplier"
-              name="vendor"
+              freeSolo
+              options={vendors.map(v => v.name)}
               value={formData.vendor}
-              onChange={handleChange}
-              placeholder="e.g., ABC Suppliers"
-              sx={{
-                '& .MuiInputBase-root': {
-                  fontSize: { xs: '1rem', sm: '1rem' },
-                  height: { xs: '56px', sm: '56px' }
-                },
-                '& .MuiInputLabel-root': {
-                  fontSize: { xs: '1rem', sm: '1rem' },
-                  fontWeight: 500
-                }
+              onInputChange={(event, newValue) => {
+                setFormData(prev => ({ ...prev, vendor: newValue || '' }));
               }}
+              onChange={async (event, newValue) => {
+                if (newValue && !vendors.find(v => v.name === newValue)) {
+                  // Add new vendor if it doesn't exist
+                  try {
+                    await addVendor({ name: newValue });
+                    setSnackbar({ open: true, message: `✓ Vendor "${newValue}" added!`, severity: 'success' });
+                  } catch (error) {
+                    console.error('Error adding vendor:', error);
+                  }
+                }
+                setFormData(prev => ({ ...prev, vendor: newValue || '' }));
+              }}
+              renderInput={(params) => (
+                <TextField
+                  {...params}
+                  label="🏪 Vendor/Supplier"
+                  placeholder="Select or type to add new vendor"
+                  sx={{
+                    '& .MuiInputBase-root': {
+                      fontSize: { xs: '1rem', sm: '1rem' },
+                    },
+                    '& .MuiInputLabel-root': {
+                      fontSize: { xs: '1rem', sm: '1rem' },
+                      fontWeight: 500
+                    }
+                  }}
+                />
+              )}
             />
 
             {/* Description Field */}
@@ -1286,6 +1306,7 @@ const ExpenseEntry = () => {
                   <TableCell sx={{ fontWeight: 'bold', bgcolor: 'primary.main', color: 'white', fontSize: '0.9rem' }}>Date</TableCell>
                   <TableCell sx={{ fontWeight: 'bold', bgcolor: 'primary.main', color: 'white', fontSize: '0.9rem' }}>Category</TableCell>
                   <TableCell sx={{ fontWeight: 'bold', bgcolor: 'primary.main', color: 'white', fontSize: '0.9rem' }}>Sub-Category</TableCell>
+                  <TableCell sx={{ fontWeight: 'bold', bgcolor: 'primary.main', color: 'white', fontSize: '0.9rem' }}>Vendor</TableCell>
                   <TableCell sx={{ fontWeight: 'bold', bgcolor: 'primary.main', color: 'white', fontSize: '0.9rem' }}>Quantity</TableCell>
                   <TableCell sx={{ fontWeight: 'bold', bgcolor: 'primary.main', color: 'white', fontSize: '0.9rem' }}>Total</TableCell>
                   <TableCell sx={{ fontWeight: 'bold', bgcolor: 'primary.main', color: 'white', fontSize: '0.9rem' }}>Paid</TableCell>
@@ -1329,6 +1350,9 @@ const ExpenseEntry = () => {
                       </TableCell>
                       <TableCell sx={{ fontSize: '0.8rem' }}>
                         {expense.subCategory || '-'}
+                      </TableCell>
+                      <TableCell sx={{ fontSize: '0.8rem', fontWeight: 500 }}>
+                        {expense.vendor || '-'}
                       </TableCell>
                       <TableCell sx={{ fontSize: '0.8rem', fontWeight: 500 }}>
                         {expense.quantity ? (

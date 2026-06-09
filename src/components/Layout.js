@@ -26,6 +26,10 @@ import DashboardIcon from '@mui/icons-material/Dashboard';
 import AddCircleIcon from '@mui/icons-material/AddCircle';
 import SettingsIcon from '@mui/icons-material/Settings';
 import DescriptionIcon from '@mui/icons-material/Description';
+import BuildIcon from '@mui/icons-material/Build';
+import TimelineIcon from '@mui/icons-material/Timeline';
+import PaymentIcon from '@mui/icons-material/Payment';
+import AccountBalanceIcon from '@mui/icons-material/AccountBalance';
 import { useNavigate, useLocation } from 'react-router-dom';
 
 const drawerWidth = 240;
@@ -44,6 +48,10 @@ const Layout = ({ children }) => {
   const menuItems = [
     { text: 'Dashboard', icon: <DashboardIcon />, path: '/' },
     { text: 'Add Expense', icon: <AddCircleIcon />, path: '/expense-entry' },
+    { text: 'Project Setup', icon: <BuildIcon />, path: '/project-config' },
+    { text: 'Progress Tracker', icon: <TimelineIcon />, path: '/progress-tracker' },
+    { text: 'Payment Stages', icon: <AccountBalanceIcon />, path: '/payment-stages' },
+    { text: 'Payment Analyzer', icon: <PaymentIcon />, path: '/payment-analyzer' },
     { text: 'Reports', icon: <DescriptionIcon />, path: '/reports' },
     { text: 'Settings', icon: <SettingsIcon />, path: '/settings' },
   ];

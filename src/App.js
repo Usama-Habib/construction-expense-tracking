@@ -9,6 +9,10 @@ import Dashboard from './pages/Dashboard';
 import ExpenseEntry from './pages/ExpenseEntry';
 import Management from './pages/Management';
 import Reports from './pages/Reports';
+import ProjectConfig from './pages/ProjectConfig';
+import ProgressTracker from './pages/ProgressTracker';
+import PaymentAnalyzer from './pages/PaymentAnalyzer';
+import PaymentStages from './pages/PaymentStages';
 
 const theme = createTheme({
   palette: {
@@ -67,6 +71,10 @@ function AppContent() {
           <Route path="/expense-entry" element={<ExpenseEntry />} />
           <Route path="/reports" element={<Reports />} />
           <Route path="/settings" element={<Management />} />
+          <Route path="/project-config" element={<ProjectConfig />} />
+          <Route path="/progress-tracker" element={<ProgressTracker />} />
+          <Route path="/payment-analyzer" element={<PaymentAnalyzer />} />
+          <Route path="/payment-stages" element={<PaymentStages />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </Layout>

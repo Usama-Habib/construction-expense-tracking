@@ -34,7 +34,7 @@ const DEFAULT_PAYMENT_METHODS = ['Cash', 'Bank Transfer', 'Credit Card', 'Debit 
 // Cache configuration
 const CACHE_KEY = 'expense_cache';
 const CACHE_TIMESTAMP_KEY = 'expense_cache_timestamp';
-const CACHE_EXPIRY_MINUTES = 5; // Cache expires after 5 minutes
+const CACHE_EXPIRY_MINUTES = 10; // Cache expires after 30 minutes
 
 // Cache helper functions
 const getCachedData = () => {
@@ -81,13 +81,25 @@ export const ExpenseProvider = ({ children }) => {
   const [categories, setCategories] = useState(DEFAULT_CATEGORIES);
   const [vendors, setVendors] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [isLoadingData, setIsLoadingData] = useState(false);
 
   const [paymentMethods, setPaymentMethods] = useState(DEFAULT_PAYMENT_METHODS);
   const [budget, setBudget] = useState({ total: 0, categories: {} });
   const [lastSync, setLastSync] = useState(null);
+  
+  // Project configuration and progress tracking
+  const [projectConfig, setProjectConfig] = useState(null);
+  const [progressData, setProgressData] = useState(null);
+  const [paymentStages, setPaymentStages] = useState(null);
 
   // Load data from Firestore or cache
   const loadData = async (forceRefresh = false) => {
+    // Prevent multiple simultaneous loads
+    if (isLoadingData && !forceRefresh) {
+      return;
+    }
+    
+    setIsLoadingData(true);
     setLoading(true);
     try {
       // Try to use cached data first (unless force refresh)
@@ -96,9 +108,20 @@ export const ExpenseProvider = ({ children }) => {
         if (cachedData) {
           setExpenses(cachedData.expenses || []);
           setCategories(cachedData.categories || DEFAULT_CATEGORIES);
-          setVendors(cachedData.vendors || []);
+          // Normalize cached vendors to ensure consistent structure
+          const normalizedVendors = (cachedData.vendors || []).map(v => ({
+            id: v.id,
+            name: String(v.name || ''),
+            contact: String(v.contact || ''),
+            email: String(v.email || ''),
+            notes: String(v.notes || ''),
+          }));
+          setVendors(normalizedVendors);
           setPaymentMethods(cachedData.paymentMethods || DEFAULT_PAYMENT_METHODS);
           setBudget(cachedData.budget || { total: 0, categories: {} });
+          setProjectConfig(cachedData.projectConfig || null);
+          setProgressData(cachedData.progressData || null);
+          setPaymentStages(cachedData.paymentStages || null);
           setLastSync(new Date(parseInt(localStorage.getItem(CACHE_TIMESTAMP_KEY))));
           setLoading(false);
           return;
@@ -131,10 +154,17 @@ export const ExpenseProvider = ({ children }) => {
 
       // Load vendors
       const vendorsSnapshot = await getDocs(collection(db, 'vendors'));
-      const vendorsData = vendorsSnapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      }));
+      const vendorsData = vendorsSnapshot.docs.map(doc => {
+        const data = doc.data();
+        // Normalize vendor data to ensure consistent structure
+        return {
+          id: doc.id,
+          name: String(data.name || ''),
+          contact: String(data.contact || ''),
+          email: String(data.email || ''),
+          notes: String(data.notes || ''),
+        };
+      });
       setVendors(vendorsData);
 
       // Load settings
@@ -153,13 +183,40 @@ export const ExpenseProvider = ({ children }) => {
         }
       }
 
+      // Load project configuration
+      const projectConfigSnapshot = await getDocs(collection(db, 'projectConfig'));
+      let finalProjectConfig = null;
+      if (!projectConfigSnapshot.empty) {
+        finalProjectConfig = projectConfigSnapshot.docs[0].data();
+        setProjectConfig(finalProjectConfig);
+      }
+
+      // Load progress data
+      const progressDataSnapshot = await getDocs(collection(db, 'progressData'));
+      let finalProgressData = null;
+      if (!progressDataSnapshot.empty) {
+        finalProgressData = progressDataSnapshot.docs[0].data();
+        setProgressData(finalProgressData);
+      }
+
+      // Load payment stages
+      const paymentStagesSnapshot = await getDocs(collection(db, 'paymentStages'));
+      let finalPaymentStages = null;
+      if (!paymentStagesSnapshot.empty) {
+        finalPaymentStages = paymentStagesSnapshot.docs[0].data();
+        setPaymentStages(finalPaymentStages.stages || finalPaymentStages);
+      }
+
       // Cache the loaded data
       setCachedData({
         expenses: expensesData,
         categories: finalCategories,
         vendors: vendorsData,
         paymentMethods: finalPaymentMethods,
-        budget: finalBudget
+        budget: finalBudget,
+        projectConfig: finalProjectConfig,
+        progressData: finalProgressData,
+        paymentStages: finalPaymentStages
       });
       setLastSync(new Date());
       
@@ -167,6 +224,7 @@ export const ExpenseProvider = ({ children }) => {
       console.error('❌ Error loading data from Firestore:', error);
     } finally {
       setLoading(false);
+      setIsLoadingData(false);
     }
   };
 
@@ -213,6 +271,7 @@ export const ExpenseProvider = ({ children }) => {
   // Load data on mount
   useEffect(() => {
     loadData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Helper function to sort expenses by date (descending - newest first)
@@ -328,7 +387,12 @@ export const ExpenseProvider = ({ children }) => {
     try {
       const docRef = await addDoc(collection(db, 'categories'), category);
       const newCategory = { id: docRef.id, ...category };
-      setCategories(prev => [...prev, newCategory]);
+      const updatedCategories = [...categories, newCategory];
+      setCategories(updatedCategories);
+      
+      // Update cache
+      const cachedData = getCachedData() || {};
+      setCachedData({ ...cachedData, categories: updatedCategories });
     } catch (error) {
       console.error('❌ Error adding category:', error);
     }
@@ -337,7 +401,12 @@ export const ExpenseProvider = ({ children }) => {
   const updateCategory = async (id, updates) => {
     try {
       await updateDoc(doc(db, 'categories', id), updates);
-      setCategories(prev => prev.map(cat => cat.id === id ? { ...cat, ...updates } : cat));
+      const updatedCategories = categories.map(cat => cat.id === id ? { ...cat, ...updates } : cat);
+      setCategories(updatedCategories);
+      
+      // Update cache
+      const cachedData = getCachedData() || {};
+      setCachedData({ ...cachedData, categories: updatedCategories });
     } catch (error) {
       console.error('❌ Error updating category:', error);
     }
@@ -346,7 +415,12 @@ export const ExpenseProvider = ({ children }) => {
   const deleteCategory = async (id) => {
     try {
       await deleteDoc(doc(db, 'categories', id));
-      setCategories(prev => prev.filter(cat => cat.id !== id));
+      const updatedCategories = categories.filter(cat => cat.id !== id);
+      setCategories(updatedCategories);
+      
+      // Update cache
+      const cachedData = getCachedData() || {};
+      setCachedData({ ...cachedData, categories: updatedCategories });
     } catch (error) {
       console.error('❌ Error deleting category:', error);
     }
@@ -355,18 +429,45 @@ export const ExpenseProvider = ({ children }) => {
   // Vendor operations
   const addVendor = async (vendor) => {
     try {
-      const docRef = await addDoc(collection(db, 'vendors'), { name: vendor, createdAt: new Date() });
-      const newVendor = { id: docRef.id, name: vendor };
-      setVendors(prev => [...prev, newVendor]);
+      const vendorData = {
+        name: String(vendor.name || vendor || ''),
+        contact: String(vendor.contact || ''),
+        email: String(vendor.email || ''),
+        notes: String(vendor.notes || ''),
+        createdAt: new Date().toISOString()
+      };
+      const docRef = await addDoc(collection(db, 'vendors'), vendorData);
+      const newVendor = { id: docRef.id, ...vendorData };
+      const updatedVendors = [...vendors, newVendor];
+      setVendors(updatedVendors);
+      
+      // Update cache
+      const cachedData = getCachedData() || {};
+      setCachedData({ ...cachedData, vendors: updatedVendors });
+      
+      return newVendor;
     } catch (error) {
       console.error('❌ Error adding vendor:', error);
+      throw error;
     }
   };
 
   const updateVendor = async (id, updates) => {
     try {
-      await updateDoc(doc(db, 'vendors', id), updates);
-      setVendors(prev => prev.map(v => v.id === id ? { ...v, ...updates } : v));
+      // Normalize updates to ensure all values are strings
+      const normalizedUpdates = {
+        name: String(updates.name || ''),
+        contact: String(updates.contact || ''),
+        email: String(updates.email || ''),
+        notes: String(updates.notes || ''),
+      };
+      await updateDoc(doc(db, 'vendors', id), normalizedUpdates);
+      const updatedVendors = vendors.map(v => v.id === id ? { ...v, ...normalizedUpdates } : v);
+      setVendors(updatedVendors);
+      
+      // Update cache
+      const cachedData = getCachedData() || {};
+      setCachedData({ ...cachedData, vendors: updatedVendors });
     } catch (error) {
       console.error('❌ Error updating vendor:', error);
     }
@@ -375,7 +476,12 @@ export const ExpenseProvider = ({ children }) => {
   const deleteVendor = async (id) => {
     try {
       await deleteDoc(doc(db, 'vendors', id));
-      setVendors(prev => prev.filter(v => v.id !== id));
+      const updatedVendors = vendors.filter(v => v.id !== id);
+      setVendors(updatedVendors);
+      
+      // Update cache
+      const cachedData = getCachedData() || {};
+      setCachedData({ ...cachedData, vendors: updatedVendors });
     } catch (error) {
       console.error('❌ Error deleting vendor:', error);
     }
@@ -451,6 +557,83 @@ export const ExpenseProvider = ({ children }) => {
     });
   };
 
+  // Project configuration operations
+  const saveProjectConfig = async (config) => {
+    try {
+      const projectConfigSnapshot = await getDocs(collection(db, 'projectConfig'));
+      
+      if (projectConfigSnapshot.empty) {
+        // Create new config document
+        await addDoc(collection(db, 'projectConfig'), config);
+      } else {
+        // Update existing config document
+        const configDocId = projectConfigSnapshot.docs[0].id;
+        await updateDoc(doc(db, 'projectConfig', configDocId), config);
+      }
+      
+      setProjectConfig(config);
+      
+      // Update cache
+      const cachedData = getCachedData() || {};
+      setCachedData({ ...cachedData, projectConfig: config });
+    } catch (error) {
+      console.error('❌ Error saving project config:', error);
+      throw error;
+    }
+  };
+
+  // Progress data operations
+  const saveProgressData = async (progress) => {
+    try {
+      const progressDataSnapshot = await getDocs(collection(db, 'progressData'));
+      
+      if (progressDataSnapshot.empty) {
+        // Create new progress document
+        await addDoc(collection(db, 'progressData'), progress);
+      } else {
+        // Update existing progress document
+        const progressDocId = progressDataSnapshot.docs[0].id;
+        await updateDoc(doc(db, 'progressData', progressDocId), progress);
+      }
+      
+      setProgressData(progress);
+      
+      // Update cache
+      const cachedData = getCachedData() || {};
+      setCachedData({ ...cachedData, progressData: progress });
+    } catch (error) {
+      console.error('❌ Error saving progress data:', error);
+      throw error;
+    }
+  };
+
+  // Payment stages operations
+  const savePaymentStages = async (stages) => {
+    try {
+      const paymentStagesSnapshot = await getDocs(collection(db, 'paymentStages'));
+      
+      const dataToSave = { stages, lastUpdated: new Date().toISOString() };
+      
+      if (paymentStagesSnapshot.empty) {
+        // Create new payment stages document
+        await addDoc(collection(db, 'paymentStages'), dataToSave);
+      } else {
+        // Update existing payment stages document
+        const stagesDocId = paymentStagesSnapshot.docs[0].id;
+        await updateDoc(doc(db, 'paymentStages', stagesDocId), dataToSave);
+      }
+      
+      setPaymentStages(stages);
+      
+      // Update cache
+      const cachedData = getCachedData() || {};
+      setCachedData({ ...cachedData, paymentStages: stages });
+    } catch (error) {
+      console.error('❌ Error saving payment stages:', error);
+      throw error;
+    }
+  };
+
   const value = {
     // State
     expenses,
@@ -460,6 +643,9 @@ export const ExpenseProvider = ({ children }) => {
     budget,
     loading,
     lastSync,
+    projectConfig,
+    progressData,
+    paymentStages,
     
     // Expense operations
     addExpense,
@@ -486,6 +672,11 @@ export const ExpenseProvider = ({ children }) => {
     
     // Budget
     setBudget,
+    
+    // Project tracking
+    saveProjectConfig,
+    saveProgressData,
+    savePaymentStages,
     
     // Analytics
     getTotalExpenses,

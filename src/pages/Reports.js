@@ -60,10 +60,6 @@ const Reports = () => {
           `Found ${result.count} expenses.\n\nOK = MERGE with existing\nCancel = REPLACE all data`
         );
 
-        if (!shouldMerge) {
-          console.log('Replacing all data');
-        }
-
         bulkAddExpenses(result.expenses);
         
         setSnackbar({

@@ -96,8 +96,9 @@ const Management = () => {
   };
 
   const handleVendorEdit = (vendor) => {
+    if (!vendor) return;
     setVendorForm({
-      name: vendor.name,
+      name: vendor.name || '',
       contact: vendor.contact || '',
       email: vendor.email || '',
       notes: vendor.notes || '',
@@ -199,7 +200,14 @@ const Management = () => {
                   No vendors added yet. Add your first vendor!
                 </Typography>
               ) : (
-                vendors.map((vendor) => (
+                vendors.map((vendor) => {
+                  // Ensure vendor fields are strings, not objects
+                  const vendorName = typeof vendor.name === 'string' ? vendor.name : (vendor.name?.name || 'Unnamed Vendor');
+                  const vendorContact = typeof vendor.contact === 'string' ? vendor.contact : '';
+                  const vendorEmail = typeof vendor.email === 'string' ? vendor.email : '';
+                  const vendorNotes = typeof vendor.notes === 'string' ? vendor.notes : '';
+                  
+                  return (
                   <ListItem
                     key={vendor.id}
                     sx={{
@@ -220,17 +228,18 @@ const Management = () => {
                     }
                   >
                     <ListItemText
-                      primary={vendor.name}
+                      primary={vendorName}
                       secondary={
                         <>
-                          {vendor.contact && <div>📞 {vendor.contact}</div>}
-                          {vendor.email && <div>✉️ {vendor.email}</div>}
-                          {vendor.notes && <div>📝 {vendor.notes}</div>}
+                          {vendorContact && <div>📞 {vendorContact}</div>}
+                          {vendorEmail && <div>✉️ {vendorEmail}</div>}
+                          {vendorNotes && <div>📝 {vendorNotes}</div>}
                         </>
                       }
                     />
                   </ListItem>
-                ))
+                  );
+                })
               )}
             </List>
           </Box>
