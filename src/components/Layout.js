@@ -49,9 +49,8 @@ const Layout = ({ children }) => {
     { text: 'Dashboard', icon: <DashboardIcon />, path: '/' },
     { text: 'Add Expense', icon: <AddCircleIcon />, path: '/expense-entry' },
     { text: 'Project Setup', icon: <BuildIcon />, path: '/project-config' },
-    { text: 'Progress Tracker', icon: <TimelineIcon />, path: '/progress-tracker' },
-    { text: 'Payment Stages', icon: <AccountBalanceIcon />, path: '/payment-stages' },
-    { text: 'Payment Analyzer', icon: <PaymentIcon />, path: '/payment-analyzer' },
+    { text: 'Cost Analysis', icon: <AccountBalanceIcon />, path: '/cost-dashboard' },
+    { text: 'Payment Tracker', icon: <PaymentIcon />, path: '/payment-tracker' },
     { text: 'Reports', icon: <DescriptionIcon />, path: '/reports' },
     { text: 'Settings', icon: <SettingsIcon />, path: '/settings' },
   ];
