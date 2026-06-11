@@ -568,9 +568,35 @@ const ProgressTracker = () => {
             </Grid>
           )}
         </DialogContent>
-        <DialogActions>
-          <Button onClick={handleCloseEdit}>Cancel</Button>
-          <Button onClick={handleSaveProgress} variant="contained" color="primary">
+        <DialogActions sx={{ 
+          p: 2, 
+          gap: 2, 
+          flexDirection: { xs: 'column', sm: 'row' },
+          '& > button': {
+            width: { xs: '100%', sm: 'auto' }
+          }
+        }}>
+          <Button 
+            onClick={handleCloseEdit}
+            variant="outlined"
+            size="large"
+            sx={{ 
+              minWidth: { xs: '100%', sm: 130 },
+              order: { xs: 2, sm: 1 }
+            }}
+          >
+            Cancel
+          </Button>
+          <Button 
+            onClick={handleSaveProgress} 
+            variant="contained" 
+            color="primary"
+            size="large"
+            sx={{ 
+              minWidth: { xs: '100%', sm: 130 },
+              order: { xs: 1, sm: 2 }
+            }}
+          >
             Save Progress
           </Button>
         </DialogActions>

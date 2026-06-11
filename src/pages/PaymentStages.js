@@ -369,45 +369,70 @@ const PaymentStages = () => {
   }
 
   return (
-    <Container maxWidth="xl" sx={{ mt: 4, mb: 4 }}>
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
-        <Box>
-          <Typography variant="h4" sx={{ fontWeight: 'bold', color: '#2c3e50' }}>
-            💰 Payment Stages Tracker
-          </Typography>
-          <Typography variant="body2" color="text.secondary">
-            Track contractor's payment stages vs actual work value completed
-          </Typography>
+    <Box sx={{ 
+      width: '100%', 
+      height: '100vh',
+      overflow: 'auto',
+      bgcolor: '#f5f7fa'
+    }}>
+      <Container maxWidth="xl" sx={{ 
+        py: { xs: 2, md: 3 }, 
+        px: { xs: 2, md: 3 },
+        minHeight: '100%',
+        maxWidth: '100%'
+      }}>
+        <Box sx={{ 
+          display: 'flex', 
+          flexDirection: { xs: 'column', md: 'row' },
+          justifyContent: 'space-between', 
+          alignItems: { xs: 'flex-start', md: 'center' },
+          gap: 2,
+          mb: 3 
+        }}>
+          <Box>
+            <Typography variant="h4" sx={{ fontWeight: 'bold', color: '#2c3e50' }}>
+              💰 Payment Stages Tracker
+            </Typography>
+            <Typography variant="body2" color="text.secondary">
+              Track contractor's payment stages vs actual work value completed
+            </Typography>
+          </Box>
+          <Box sx={{ 
+            display: 'flex', 
+            flexDirection: { xs: 'column', sm: 'row' },
+            gap: 2,
+            width: { xs: '100%', sm: 'auto' }
+          }}>
+            <Button
+              fullWidth
+              variant="outlined"
+              startIcon={<SyncIcon />}
+              onClick={handleAutoSyncPayments}
+              sx={{ 
+                borderColor: '#667eea',
+                color: '#667eea',
+                '&:hover': {
+                  borderColor: '#5568d3',
+                  bgcolor: 'rgba(102, 126, 234, 0.08)'
+                }
+              }}
+            >
+              Sync from Expenses
+            </Button>
+            <Button
+              fullWidth
+              variant="contained"
+              startIcon={<SaveIcon />}
+              onClick={handleSaveAllStages}
+              sx={{ 
+                background: 'linear-gradient(45deg, #667eea 30%, #764ba2 90%)',
+                px: 3
+              }}
+            >
+              Save Changes
+            </Button>
+          </Box>
         </Box>
-        <Box sx={{ display: 'flex', gap: 2 }}>
-          <Button
-            variant="outlined"
-            startIcon={<SyncIcon />}
-            onClick={handleAutoSyncPayments}
-            sx={{ 
-              borderColor: '#667eea',
-              color: '#667eea',
-              '&:hover': {
-                borderColor: '#5568d3',
-                bgcolor: 'rgba(102, 126, 234, 0.08)'
-              }
-            }}
-          >
-            Sync from Expenses
-          </Button>
-          <Button
-            variant="contained"
-            startIcon={<SaveIcon />}
-            onClick={handleSaveAllStages}
-            sx={{ 
-              background: 'linear-gradient(45deg, #667eea 30%, #764ba2 90%)',
-              px: 3
-            }}
-          >
-            Save Changes
-          </Button>
-        </Box>
-      </Box>
 
       {/* Overall Summary Cards */}
       <Grid container spacing={3} sx={{ mb: 4 }}>
@@ -915,7 +940,7 @@ const PaymentStages = () => {
               See if you're saving or paying more at each payment stage
             </Typography>
             
-            <TableContainer>
+            <TableContainer sx={{ maxHeight: 500, overflow: 'auto' }}>
               <Table size="small">
                 <TableHead>
                   <TableRow sx={{ bgcolor: '#f5f5f5' }}>
@@ -1051,7 +1076,7 @@ const PaymentStages = () => {
           <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 2 }}>
             Automatically pulled from expenses where Category = "Contractor" and Sub-category = "Payment"
           </Typography>
-          <TableContainer>
+          <TableContainer sx={{ maxHeight: 400, overflow: 'auto' }}>
             <Table size="small">
               <TableHead>
                 <TableRow sx={{ bgcolor: '#f5f5f5' }}>
@@ -1179,9 +1204,35 @@ const PaymentStages = () => {
             </Grid>
           )}
         </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setEditDialog(false)}>Cancel</Button>
-          <Button onClick={handleSaveEdit} variant="contained" color="primary">
+        <DialogActions sx={{ 
+          p: 2, 
+          gap: 2, 
+          flexDirection: { xs: 'column', sm: 'row' },
+          '& > button': {
+            width: { xs: '100%', sm: 'auto' }
+          }
+        }}>
+          <Button 
+            onClick={() => setEditDialog(false)}
+            variant="outlined"
+            size="large"
+            sx={{ 
+              minWidth: { xs: '100%', sm: 120 },
+              order: { xs: 2, sm: 1 }
+            }}
+          >
+            Cancel
+          </Button>
+          <Button 
+            onClick={handleSaveEdit} 
+            variant="contained" 
+            color="primary"
+            size="large"
+            sx={{ 
+              minWidth: { xs: '100%', sm: 120 },
+              order: { xs: 1, sm: 2 }
+            }}
+          >
             Save
           </Button>
         </DialogActions>
@@ -1223,14 +1274,41 @@ const PaymentStages = () => {
             </Grid>
           )}
         </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setPaymentDialog(false)}>Cancel</Button>
-          <Button onClick={handleSavePayment} variant="contained" color="primary">
+        <DialogActions sx={{ 
+          p: 2, 
+          gap: 2, 
+          flexDirection: { xs: 'column', sm: 'row' },
+          '& > button': {
+            width: { xs: '100%', sm: 'auto' }
+          }
+        }}>
+          <Button 
+            onClick={() => setPaymentDialog(false)}
+            variant="outlined"
+            size="large"
+            sx={{ 
+              minWidth: { xs: '100%', sm: 130 },
+              order: { xs: 2, sm: 1 }
+            }}
+          >
+            Cancel
+          </Button>
+          <Button 
+            onClick={handleSavePayment} 
+            variant="contained" 
+            color="primary"
+            size="large"
+            sx={{ 
+              minWidth: { xs: '100%', sm: 130 },
+              order: { xs: 1, sm: 2 }
+            }}
+          >
             Record Payment
           </Button>
         </DialogActions>
       </Dialog>
-    </Container>
+      </Container>
+    </Box>
   );
 };
 

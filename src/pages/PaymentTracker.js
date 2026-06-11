@@ -24,6 +24,11 @@ import {
   CardContent,
   Grid,
   IconButton,
+  Stack,
+  CardActions,
+  Divider,
+  useTheme,
+  useMediaQuery,
 } from '@mui/material';
 import AddIcon from '@mui/icons-material/Add';
 import EditIcon from '@mui/icons-material/Edit';
@@ -32,6 +37,8 @@ import PendingIcon from '@mui/icons-material/Pending';
 import { useExpense } from '../contexts/ExpenseContext';
 
 const PaymentTracker = () => {
+  const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
   const { projectConfig, paymentStages, savePaymentStages, expenses } = useExpense();
   const [paymentDialog, setPaymentDialog] = useState(false);
   const [editingStage, setEditingStage] = useState(null);
@@ -176,13 +183,24 @@ const PaymentTracker = () => {
   const progressPercentage = (totalPaid / totalExpected) * 100 || 0;
 
   return (
-    <Container maxWidth="lg" sx={{ mt: { xs: 2, md: 4 }, mb: 4, px: { xs: 2, md: 3 } }}>
-      <Typography variant="h5" sx={{ fontWeight: 'bold', mb: 1 }}>
-        💳 Payment & Progress Tracker
-      </Typography>
-      <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
-        Track payments by stage
-      </Typography>
+    <Box sx={{ 
+      width: '100%', 
+      height: '100vh',
+      overflow: 'auto',
+      bgcolor: '#f5f7fa'
+    }}>
+      <Container maxWidth="xl" sx={{ 
+        py: { xs: 2, md: 3 }, 
+        px: { xs: 2, md: 3 },
+        minHeight: '100%',
+        maxWidth: '100%'
+      }}>
+        <Typography variant="h5" sx={{ fontWeight: 'bold', mb: 1 }}>
+          💳 Payment & Progress Tracker
+        </Typography>
+        <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
+          Track payments by stage
+        </Typography>
 
       {/* Info Alert if showing expense tracker data */}
       {totalPaidFromExpenses > 0 && totalPaidFromStages === 0 && (
@@ -273,124 +291,343 @@ const PaymentTracker = () => {
         </Grid>
       </Grid>
 
-      {/* Payment Stages Table */}
-      <TableContainer component={Paper}>
-        <Table size="small">
-          <TableHead>
-            <TableRow sx={{ bgcolor: 'primary.main' }}>
-              <TableCell sx={{ color: 'white', fontWeight: 'bold' }}>#</TableCell>
-              <TableCell sx={{ color: 'white', fontWeight: 'bold' }}>Stage</TableCell>
-              <TableCell sx={{ color: 'white', fontWeight: 'bold' }}>Level</TableCell>
-              <TableCell align="right" sx={{ color: 'white', fontWeight: 'bold' }}>%</TableCell>
-              <TableCell align="right" sx={{ color: 'white', fontWeight: 'bold' }}>Expected</TableCell>
-              <TableCell align="right" sx={{ color: 'white', fontWeight: 'bold' }}>Paid</TableCell>
-              <TableCell align="center" sx={{ color: 'white', fontWeight: 'bold' }}>Status</TableCell>
-              <TableCell align="center" sx={{ color: 'white', fontWeight: 'bold' }}>Actions</TableCell>
-            </TableRow>
-          </TableHead>
-          <TableBody>
+      {/* Payment Stages Table/Cards */}
+      {isMobile ? (
+        // CARD VIEW for Mobile
+        <Box>
+          <Stack spacing={2}>
             {stages.map((stage, index) => {
               const expected = calculateExpectedAmount(stage.percentage);
               const variance = (stage.amountPaid || 0) - expected;
               const milestone = projectConfig?.paymentMilestones?.[index];
-              
-              // Handle both new format (levels array) and old format (single level string)
               const stageLevels = milestone?.levels || (milestone?.level ? [milestone.level] : []);
               
               return (
-                <TableRow 
+                <Card 
                   key={stage.id}
+                  elevation={2}
                   sx={{ 
-                    bgcolor: stage.status === 'paid' ? 'success.50' : 'inherit',
+                    borderLeft: `6px solid ${theme.palette.primary.main}`,
+                    '&:active': {
+                      transform: 'scale(0.98)',
+                      transition: 'transform 0.1s'
+                    }
                   }}
                 >
-                  <TableCell>{index + 1}</TableCell>
-                  <TableCell>
-                    <Typography variant="body2" sx={{ fontWeight: 500 }}>
-                      {stage.name}
-                    </Typography>
-                    {stage.paidDate && (
-                      <Typography variant="caption" color="text.secondary">
-                        {new Date(stage.paidDate).toLocaleDateString()}
-                      </Typography>
-                    )}
-                  </TableCell>
-                  <TableCell>
-                    <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap' }}>
-                      {stageLevels.length > 0 ? (
-                        stageLevels.map(level => (
+                  <CardContent sx={{ pb: 1 }}>
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 2 }}>
+                      <Box sx={{ flex: 1 }}>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
+                          <Chip 
+                            label={index + 1} 
+                            size="small" 
+                            color="primary" 
+                            sx={{ fontWeight: 700 }}
+                          />
+                          <Chip 
+                            label={`${stage.percentage}%`} 
+                            size="small" 
+                            color="info"
+                            variant="outlined"
+                          />
+                        </Box>
+                        <Typography variant="body1" sx={{ fontWeight: 700, mb: 1 }}>
+                          {stage.name}
+                        </Typography>
+                        {stage.paidDate && (
+                          <Typography variant="caption" color="success.main" sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                            📅 {new Date(stage.paidDate).toLocaleDateString()}
+                          </Typography>
+                        )}
+                      </Box>
+                      {renderStatusChip(stage.status)}
+                    </Box>
+                    
+                    {stageLevels.length > 0 && (
+                      <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap', mb: 2 }}>
+                        {stageLevels.map(level => (
                           <Chip 
                             key={level}
                             label={level.charAt(0).toUpperCase() + level.slice(1)} 
                             size="small" 
-                            color={
-                              level === 'foundation' ? 'default' :
-                              level === 'ground' ? 'primary' :
-                              level === 'first' ? 'secondary' :
-                              'info'
-                            }
+                            variant="filled"
+                            sx={{
+                              bgcolor: 
+                                level === 'foundation' ? '#9e9e9e' :
+                                level === 'ground' ? '#2196f3' :
+                                level === 'first' ? '#9c27b0' :
+                                '#00bcd4',
+                              color: 'white',
+                              fontWeight: 600,
+                              fontSize: '0.7rem'
+                            }}
                           />
-                        ))
-                      ) : (
-                        <Chip label="N/A" size="small" color="default" />
-                      )}
+                        ))}
+                      </Box>
+                    )}
+                    
+                    <Box sx={{ 
+                      display: 'grid', 
+                      gridTemplateColumns: '1fr 1fr',
+                      gap: 2,
+                      p: 1.5,
+                      bgcolor: 'grey.50',
+                      borderRadius: 1,
+                      mb: variance !== 0 && (stage.amountPaid || 0) > 0 ? 1 : 0
+                    }}>
+                      <Box>
+                        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', fontSize: '0.7rem' }}>
+                          💰 Expected
+                        </Typography>
+                        <Typography variant="h6" fontWeight="bold">
+                          {Math.round(expected).toLocaleString()}
+                        </Typography>
+                      </Box>
+                      <Box>
+                        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', fontSize: '0.7rem' }}>
+                          ✅ Paid
+                        </Typography>
+                        <Typography 
+                          variant="h6" 
+                          fontWeight="bold" 
+                          color={(stage.amountPaid || 0) > 0 ? 'success.main' : 'text.secondary'}
+                        >
+                          {(stage.amountPaid || 0) > 0 
+                            ? Math.round(stage.amountPaid || 0).toLocaleString() 
+                            : '-'}
+                        </Typography>
+                      </Box>
                     </Box>
-                  </TableCell>
-                  <TableCell align="right">{stage.percentage}%</TableCell>
-                  <TableCell align="right">
-                    Rs {Math.round(expected).toLocaleString()}
-                  </TableCell>
-                  <TableCell align="right">
-                    <Typography 
-                      variant="body2" 
+                    
+                    {variance !== 0 && (stage.amountPaid || 0) > 0 && (
+                      <Alert 
+                        severity={variance > 0 ? 'error' : 'success'} 
+                        icon={false}
+                        sx={{ py: 0.5 }}
+                      >
+                        <Typography variant="caption" fontWeight={600}>
+                          {variance > 0 ? '⚠️ Overpaid:' : '✅ Saved:'} Rs {Math.abs(Math.round(variance)).toLocaleString()}
+                        </Typography>
+                      </Alert>
+                    )}
+                  </CardContent>
+                  
+                  <CardActions sx={{ justifyContent: 'flex-end', px: 2, pb: 2, pt: 0 }}>
+                    <Button
+                      size="medium"
+                      variant="contained"
+                      color="primary"
+                      startIcon={stage.amountPaid > 0 ? <EditIcon /> : <AddIcon />}
+                      onClick={() => handleOpenPayment(index)}
                       sx={{ 
-                        fontWeight: 'bold',
-                        color: variance > 0 ? 'error.main' : variance < 0 ? 'warning.main' : 'success.main'
+                        flex: 1,
+                        textTransform: 'none',
+                        fontWeight: 600,
+                        borderRadius: 2
                       }}
                     >
-                      Rs {Math.round(stage.amountPaid || 0).toLocaleString()}
-                    </Typography>
-                    {variance !== 0 && stage.amountPaid > 0 && (
-                      <Typography 
-                        variant="caption" 
-                        sx={{ 
-                          color: variance > 0 ? 'error.main' : 'warning.main'
-                        }}
-                      >
-                        {variance > 0 ? '+' : ''}{variance.toLocaleString()}
-                      </Typography>
-                    )}
-                  </TableCell>
-                  <TableCell align="center">
-                    {renderStatusChip(stage.status)}
-                  </TableCell>
-                  <TableCell align="center">
-                    <IconButton 
-                      size="small" 
-                      onClick={() => handleOpenPayment(index)}
-                      color="primary"
-                    >
-                      {stage.amountPaid > 0 ? <EditIcon fontSize="small" /> : <AddIcon fontSize="small" />}
-                    </IconButton>
-                  </TableCell>
-                </TableRow>
+                      {stage.amountPaid > 0 ? 'Edit Payment' : 'Record Payment'}
+                    </Button>
+                  </CardActions>
+                </Card>
               );
             })}
             
-            {/* Total Row */}
-            <TableRow sx={{ bgcolor: 'grey.100' }}>
-              <TableCell colSpan={3} sx={{ fontWeight: 'bold' }}>TOTAL</TableCell>
-              <TableCell align="right" sx={{ fontWeight: 'bold' }}>
-                Rs {totalExpected.toLocaleString()}
-              </TableCell>
-              <TableCell align="right" sx={{ fontWeight: 'bold' }}>
-                Rs {totalPaid.toLocaleString()}
-              </TableCell>
-              <TableCell colSpan={2}></TableCell>
-            </TableRow>
-          </TableBody>
-        </Table>
-      </TableContainer>
+            {/* Total Card */}
+            <Card 
+              elevation={3}
+              sx={{ 
+                background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                color: 'white'
+              }}
+            >
+              <CardContent>
+                <Typography variant="h6" fontWeight="bold" sx={{ mb: 2 }}>
+                  💎 TOTAL
+                </Typography>
+                <Box sx={{ 
+                  display: 'grid', 
+                  gridTemplateColumns: '1fr 1fr',
+                  gap: 2
+                }}>
+                  <Box>
+                    <Typography variant="caption" sx={{ display: 'block', fontSize: '0.7rem', opacity: 0.9 }}>
+                      Expected
+                    </Typography>
+                    <Typography variant="h5" fontWeight="bold">
+                      {totalExpected.toLocaleString()}
+                    </Typography>
+                  </Box>
+                  <Box>
+                    <Typography variant="caption" sx={{ display: 'block', fontSize: '0.7rem', opacity: 0.9 }}>
+                      Paid
+                    </Typography>
+                    <Typography variant="h5" fontWeight="bold">
+                      {totalPaid.toLocaleString()}
+                    </Typography>
+                  </Box>
+                </Box>
+              </CardContent>
+            </Card>
+          </Stack>
+        </Box>
+      ) : (
+        // TABLE VIEW for Desktop
+        <TableContainer component={Paper}>
+          <Table size="small">
+            <TableHead>
+              <TableRow sx={{ bgcolor: 'primary.main' }}>
+                <TableCell sx={{ color: 'white', fontWeight: 'bold' }}>#</TableCell>
+                <TableCell sx={{ color: 'white', fontWeight: 'bold' }}>Stage</TableCell>
+                <TableCell sx={{ color: 'white', fontWeight: 'bold' }}>Level</TableCell>
+                <TableCell align="right" sx={{ color: 'white', fontWeight: 'bold' }}>%</TableCell>
+                <TableCell align="right" sx={{ color: 'white', fontWeight: 'bold' }}>Expected</TableCell>
+                <TableCell align="right" sx={{ color: 'white', fontWeight: 'bold' }}>Paid</TableCell>
+                <TableCell align="center" sx={{ color: 'white', fontWeight: 'bold' }}>Status</TableCell>
+                <TableCell align="center" sx={{ color: 'white', fontWeight: 'bold' }}>Actions</TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {stages.map((stage, index) => {
+                const expected = calculateExpectedAmount(stage.percentage);
+                const variance = (stage.amountPaid || 0) - expected;
+                const milestone = projectConfig?.paymentMilestones?.[index];
+                
+                // Handle both new format (levels array) and old format (single level string)
+                const stageLevels = milestone?.levels || (milestone?.level ? [milestone.level] : []);
+                
+                return (
+                  <TableRow 
+                    key={stage.id}
+                    sx={{ 
+                      '&:nth-of-type(odd)': { bgcolor: 'grey.50' },
+                      '&:hover': { bgcolor: 'action.hover' },
+                      transition: 'background-color 0.2s'
+                    }}
+                  >
+                    <TableCell sx={{ py: 2 }}>
+                      <Chip 
+                        label={index + 1} 
+                        size="small" 
+                        color="primary" 
+                        variant="outlined"
+                      />
+                    </TableCell>
+                    <TableCell sx={{ py: 2 }}>
+                      <Typography variant="body2" sx={{ fontWeight: 600, mb: 0.5 }}>
+                        {stage.name}
+                      </Typography>
+                      {stage.paidDate && (
+                        <Typography variant="caption" color="success.main" sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                          📅 {new Date(stage.paidDate).toLocaleDateString()}
+                        </Typography>
+                      )}
+                    </TableCell>
+                    <TableCell sx={{ py: 2 }}>
+                      <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap' }}>
+                        {stageLevels.length > 0 ? (
+                          stageLevels.map(level => (
+                            <Chip 
+                              key={level}
+                              label={level.charAt(0).toUpperCase() + level.slice(1)} 
+                              size="small" 
+                              variant="filled"
+                              sx={{
+                                bgcolor: 
+                                  level === 'foundation' ? '#9e9e9e' :
+                                  level === 'ground' ? '#2196f3' :
+                                  level === 'first' ? '#9c27b0' :
+                                  '#00bcd4',
+                                color: 'white',
+                                fontWeight: 600,
+                                fontSize: '0.7rem'
+                              }}
+                            />
+                          ))
+                        ) : (
+                          <Chip label="N/A" size="small" color="default" />
+                        )}
+                      </Box>
+                    </TableCell>
+                    <TableCell align="right" sx={{ py: 2 }}>
+                      <Chip 
+                        label={`${stage.percentage}%`} 
+                        size="small" 
+                        color="info"
+                        variant="outlined"
+                      />
+                    </TableCell>
+                    <TableCell align="right" sx={{ py: 2 }}>
+                      <Typography variant="body2" fontWeight={500}>
+                        Rs {Math.round(expected).toLocaleString()}
+                      </Typography>
+                    </TableCell>
+                    <TableCell align="right" sx={{ py: 2 }}>
+                      <Typography 
+                        variant="body2" 
+                        sx={{ 
+                          fontWeight: 'bold',
+                          color: (stage.amountPaid || 0) > 0 ? 'success.main' : 'text.secondary'
+                        }}
+                      >
+                        {(stage.amountPaid || 0) > 0 
+                          ? `Rs ${Math.round(stage.amountPaid || 0).toLocaleString()}` 
+                          : '-'}
+                      </Typography>
+                      {variance !== 0 && (stage.amountPaid || 0) > 0 && (
+                        <Typography 
+                          variant="caption" 
+                          sx={{ 
+                            display: 'block',
+                            color: variance > 0 ? 'error.main' : 'success.main'
+                          }}
+                        >
+                          {variance > 0 ? '+' : ''}{Math.round(variance).toLocaleString()}
+                        </Typography>
+                      )}
+                    </TableCell>
+                    <TableCell align="center" sx={{ py: 2 }}>
+                      {renderStatusChip(stage.status)}
+                    </TableCell>
+                    <TableCell align="center" sx={{ py: 2 }}>
+                      <IconButton 
+                        size="small" 
+                        onClick={() => handleOpenPayment(index)}
+                        sx={{ 
+                          bgcolor: 'primary.main',
+                          color: 'white',
+                          '&:hover': { 
+                            bgcolor: 'primary.dark',
+                            transform: 'scale(1.1)'
+                          },
+                          transition: 'all 0.2s'
+                        }}
+                      >
+                        {stage.amountPaid > 0 ? <EditIcon fontSize="small" /> : <AddIcon fontSize="small" />}
+                      </IconButton>
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
+              
+              {/* Total Row */}
+              <TableRow sx={{ 
+                bgcolor: 'primary.main',
+                '& td': { color: 'white' }
+              }}>
+                <TableCell colSpan={3} sx={{ fontWeight: 'bold', fontSize: '1rem', py: 2.5 }}>TOTAL</TableCell>
+                <TableCell align="right" sx={{ fontWeight: 'bold', fontSize: '1rem', py: 2.5 }}>
+                  Rs {totalExpected.toLocaleString()}
+                </TableCell>
+                <TableCell align="right" sx={{ fontWeight: 'bold', fontSize: '1rem', py: 2.5 }}>
+                  Rs {totalPaid.toLocaleString()}
+                </TableCell>
+                <TableCell colSpan={2} sx={{ py: 2.5 }}></TableCell>
+              </TableRow>
+            </TableBody>
+          </Table>
+        </TableContainer>
+      )}
 
       {/* Payment Dialog */}
       <Dialog 
@@ -398,17 +635,24 @@ const PaymentTracker = () => {
         onClose={() => setPaymentDialog(false)}
         maxWidth="sm"
         fullWidth
+        PaperProps={{
+          sx: { borderRadius: 2 }
+        }}
       >
-        <DialogTitle>
+        <DialogTitle sx={{ 
+          background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+          color: 'white',
+          fontWeight: 'bold'
+        }}>
           {editingStage !== null && stages[editingStage] 
-            ? `Record Payment - ${stages[editingStage].name}`
-            : 'Record Payment'}
+            ? `💵 ${stages[editingStage].name}`
+            : '💵 Record Payment'}
         </DialogTitle>
-        <DialogContent>
-          <Box sx={{ pt: 2, display: 'flex', flexDirection: 'column', gap: 2 }}>
+        <DialogContent sx={{ pt: 3 }}>
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2.5 }}>
             {editingStage !== null && stages[editingStage] && (
-              <Alert severity="info">
-                Expected Amount: Rs {calculateExpectedAmount(stages[editingStage].percentage).toLocaleString()}
+              <Alert severity="info" icon={false} sx={{ fontWeight: 500 }}>
+                🎯 Expected Amount: <strong>Rs {calculateExpectedAmount(stages[editingStage].percentage).toLocaleString()}</strong>
               </Alert>
             )}
             
@@ -419,8 +663,10 @@ const PaymentTracker = () => {
               value={paymentData.amount}
               onChange={(e) => setPaymentData({ ...paymentData, amount: e.target.value })}
               InputProps={{
-                startAdornment: <InputAdornment position="start">Rs</InputAdornment>
+                startAdornment: <InputAdornment position="start">💰 Rs</InputAdornment>
               }}
+              helperText="Enter the actual amount paid for this stage"
+              sx={{ '& .MuiOutlinedInput-root': { fontWeight: 500 } }}
             />
             
             <TextField
@@ -430,6 +676,10 @@ const PaymentTracker = () => {
               value={paymentData.date}
               onChange={(e) => setPaymentData({ ...paymentData, date: e.target.value })}
               InputLabelProps={{ shrink: true }}
+              InputProps={{
+                startAdornment: <InputAdornment position="start">📅</InputAdornment>
+              }}
+              helperText="When was this payment made?"
             />
             
             <TextField
@@ -440,21 +690,45 @@ const PaymentTracker = () => {
               value={paymentData.notes}
               onChange={(e) => setPaymentData({ ...paymentData, notes: e.target.value })}
               placeholder="Any additional notes about this payment..."
+              helperText="Add any relevant details or observations"
             />
           </Box>
         </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setPaymentDialog(false)}>Cancel</Button>
+        <DialogActions sx={{ 
+          p: 2.5, 
+          gap: 2, 
+          flexDirection: { xs: 'column', sm: 'row' },
+          '& > button': {
+            width: { xs: '100%', sm: 'auto' }
+          }
+        }}>
+          <Button 
+            onClick={() => setPaymentDialog(false)}
+            variant="outlined"
+            size="large"
+            sx={{ 
+              minWidth: { xs: '100%', sm: 140 },
+              order: { xs: 2, sm: 1 }
+            }}
+          >
+            Cancel
+          </Button>
           <Button 
             variant="contained" 
             onClick={handleSavePayment}
-            disabled={!paymentData.amount}
+            size="large"
+            sx={{ 
+              background: 'linear-gradient(45deg, #667eea 30%, #764ba2 90%)',
+              minWidth: { xs: '100%', sm: 140 },
+              order: { xs: 1, sm: 2 }
+            }}
           >
-            Save Payment
+            💾 Save Payment
           </Button>
         </DialogActions>
       </Dialog>
-    </Container>
+      </Container>
+    </Box>
   );
 };
 

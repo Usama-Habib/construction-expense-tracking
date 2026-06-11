@@ -29,6 +29,10 @@ import {
   FormControl,
   InputLabel,
   Autocomplete,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
 } from '@mui/material';
 import DeleteIcon from '@mui/icons-material/Delete';
 import EditIcon from '@mui/icons-material/Edit';
@@ -69,6 +73,7 @@ const ExpenseEntry = () => {
   const [editingId, setEditingId] = useState(null);
   const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' });
   const [paidAmountManuallyEdited, setPaidAmountManuallyEdited] = useState(false);
+  const [deleteConfirm, setDeleteConfirm] = useState({ open: false, id: null });
   
   // Filter state
   const [filters, setFilters] = useState({
@@ -429,10 +434,15 @@ const ExpenseEntry = () => {
   };
 
   const handleDelete = (id) => {
-    if (window.confirm('Delete this expense?')) {
-      deleteExpense(id);
-      setSnackbar({ open: true, message: '✓ Deleted!', severity: 'success' });
+    setDeleteConfirm({ open: true, id });
+  };
+
+  const confirmDelete = () => {
+    if (deleteConfirm.id) {
+      deleteExpense(deleteConfirm.id);
+      setSnackbar({ open: true, message: '✓ Expense deleted successfully!', severity: 'success' });
     }
+    setDeleteConfirm({ open: false, id: null });
   };
 
   const handleCancelEdit = () => {
@@ -1299,21 +1309,36 @@ const ExpenseEntry = () => {
           </Stack>
         ) : (
           // TABLE VIEW - For Desktop/Tablet
-          <TableContainer sx={{ maxHeight: 'calc(100vh - 250px)', overflowX: 'auto' }}>
+          <Paper elevation={3}>
+            <Box sx={{ 
+              p: 2.5, 
+              borderBottom: '2px solid',
+              borderColor: 'primary.main',
+              background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+              color: 'white'
+            }}>
+              <Typography variant="h6" fontWeight="bold">
+                📊 Expense Records
+              </Typography>
+              <Typography variant="caption">
+                {filteredExpenses.length > 0 ? `Showing ${filteredExpenses.length} filtered expense(s)` : `All ${expenses.length} expenses`}
+              </Typography>
+            </Box>
+          <TableContainer sx={{ maxHeight: 'calc(100vh - 350px)', overflowX: 'auto' }}>
             <Table stickyHeader size="small">
               <TableHead>
                 <TableRow>
-                  <TableCell sx={{ fontWeight: 'bold', bgcolor: 'primary.main', color: 'white', fontSize: '0.9rem' }}>Date</TableCell>
-                  <TableCell sx={{ fontWeight: 'bold', bgcolor: 'primary.main', color: 'white', fontSize: '0.9rem' }}>Category</TableCell>
-                  <TableCell sx={{ fontWeight: 'bold', bgcolor: 'primary.main', color: 'white', fontSize: '0.9rem' }}>Sub-Category</TableCell>
-                  <TableCell sx={{ fontWeight: 'bold', bgcolor: 'primary.main', color: 'white', fontSize: '0.9rem' }}>Vendor</TableCell>
-                  <TableCell sx={{ fontWeight: 'bold', bgcolor: 'primary.main', color: 'white', fontSize: '0.9rem' }}>Quantity</TableCell>
-                  <TableCell sx={{ fontWeight: 'bold', bgcolor: 'primary.main', color: 'white', fontSize: '0.9rem' }}>Total</TableCell>
-                  <TableCell sx={{ fontWeight: 'bold', bgcolor: 'primary.main', color: 'white', fontSize: '0.9rem' }}>Paid</TableCell>
-                  <TableCell sx={{ fontWeight: 'bold', bgcolor: 'primary.main', color: 'white', fontSize: '0.9rem' }}>Remaining</TableCell>
-                  <TableCell sx={{ fontWeight: 'bold', bgcolor: 'primary.main', color: 'white', fontSize: '0.9rem' }}>Area</TableCell>
-                  <TableCell sx={{ fontWeight: 'bold', bgcolor: 'primary.main', color: 'white', fontSize: '0.9rem' }}>Description</TableCell>
-                  <TableCell sx={{ fontWeight: 'bold', bgcolor: 'primary.main', color: 'white', fontSize: '0.9rem', textAlign: 'center' }}>Actions</TableCell>
+                  <TableCell sx={{ fontWeight: 'bold', bgcolor: 'grey.100', fontSize: '0.875rem', py: 2 }}>Date</TableCell>
+                  <TableCell sx={{ fontWeight: 'bold', bgcolor: 'grey.100', fontSize: '0.875rem', py: 2 }}>Category</TableCell>
+                  <TableCell sx={{ fontWeight: 'bold', bgcolor: 'grey.100', fontSize: '0.875rem', py: 2 }}>Sub-Category</TableCell>
+                  <TableCell sx={{ fontWeight: 'bold', bgcolor: 'grey.100', fontSize: '0.875rem', py: 2 }}>Vendor</TableCell>
+                  <TableCell sx={{ fontWeight: 'bold', bgcolor: 'grey.100', fontSize: '0.875rem', py: 2 }}>Quantity</TableCell>
+                  <TableCell sx={{ fontWeight: 'bold', bgcolor: 'grey.100', fontSize: '0.875rem', py: 2 }}>Total</TableCell>
+                  <TableCell sx={{ fontWeight: 'bold', bgcolor: 'grey.100', fontSize: '0.875rem', py: 2 }}>Paid</TableCell>
+                  <TableCell sx={{ fontWeight: 'bold', bgcolor: 'grey.100', fontSize: '0.875rem', py: 2 }}>Remaining</TableCell>
+                  <TableCell sx={{ fontWeight: 'bold', bgcolor: 'grey.100', fontSize: '0.875rem', py: 2 }}>Area</TableCell>
+                  <TableCell sx={{ fontWeight: 'bold', bgcolor: 'grey.100', fontSize: '0.875rem', py: 2 }}>Description</TableCell>
+                  <TableCell align="center" sx={{ fontWeight: 'bold', bgcolor: 'grey.100', fontSize: '0.875rem', py: 2 }}>Actions</TableCell>
                 </TableRow>
               </TableHead>
               <TableBody>
@@ -1328,12 +1353,14 @@ const ExpenseEntry = () => {
                     <TableRow 
                       key={expense.id}
                       sx={{ 
+                        '&:nth-of-type(odd)': { bgcolor: 'grey.50' },
                         '&:hover': { bgcolor: 'action.hover' },
                         bgcolor: statusColors.bg,
-                        borderLeft: `5px solid ${statusColors.border}`
+                        borderLeft: `5px solid ${statusColors.border}`,
+                        transition: 'background-color 0.2s'
                       }}
                     >
-                      <TableCell sx={{ fontSize: '0.85rem', fontWeight: 500 }}>
+                      <TableCell sx={{ fontSize: '0.85rem', fontWeight: 500, py: 2 }}>
                         {new Date(expense.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: '2-digit' })}
                       </TableCell>
                       <TableCell>
@@ -1348,13 +1375,13 @@ const ExpenseEntry = () => {
                           }}
                         />
                       </TableCell>
-                      <TableCell sx={{ fontSize: '0.8rem' }}>
+                      <TableCell sx={{ fontSize: '0.8rem', py: 2 }}>
                         {expense.subCategory || '-'}
                       </TableCell>
-                      <TableCell sx={{ fontSize: '0.8rem', fontWeight: 500 }}>
+                      <TableCell sx={{ fontSize: '0.8rem', fontWeight: 500, py: 2 }}>
                         {expense.vendor || '-'}
                       </TableCell>
-                      <TableCell sx={{ fontSize: '0.8rem', fontWeight: 500 }}>
+                      <TableCell sx={{ fontSize: '0.8rem', fontWeight: 500, py: 2 }}>
                         {expense.quantity ? (
                           <span>
                             {expense.quantity}{expense.unit ? ' ' + expense.unit : ''}
@@ -1366,22 +1393,22 @@ const ExpenseEntry = () => {
                           </span>
                         ) : '-'}
                       </TableCell>
-                      <TableCell sx={{ fontWeight: 700, color: 'primary.main', fontSize: '0.95rem' }}>
+                      <TableCell sx={{ fontWeight: 700, color: 'primary.main', fontSize: '0.95rem', py: 2 }}>
                         {totalAmt.toLocaleString()}
                       </TableCell>
-                      <TableCell sx={{ fontWeight: 600, color: 'success.main', fontSize: '0.9rem' }}>
+                      <TableCell sx={{ fontWeight: 600, color: 'success.main', fontSize: '0.9rem', py: 2 }}>
                         {paidAmt.toLocaleString()}
                       </TableCell>
-                      <TableCell sx={{ fontWeight: 600, color: 'warning.main', fontSize: '0.9rem' }}>
+                      <TableCell sx={{ fontWeight: 600, color: 'warning.main', fontSize: '0.9rem', py: 2 }}>
                         {remainingAmt.toLocaleString()}
                       </TableCell>
-                      <TableCell sx={{ fontSize: '0.8rem' }}>
+                      <TableCell sx={{ fontSize: '0.8rem', py: 2 }}>
                         {expense.area || '-'}
                       </TableCell>
-                      <TableCell sx={{ fontSize: '0.8rem', maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      <TableCell sx={{ fontSize: '0.8rem', maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', py: 2 }}>
                         {expense.description || expense.notes || '-'}
                       </TableCell>
-                      <TableCell sx={{ textAlign: 'center' }}>
+                      <TableCell sx={{ textAlign: 'center', py: 2 }}>
                         <IconButton size="small" color="primary" onClick={() => handleEdit(expense)}>
                           <EditIcon fontSize="small" />
                         </IconButton>
@@ -1395,6 +1422,7 @@ const ExpenseEntry = () => {
               </TableBody>
             </Table>
           </TableContainer>
+          </Paper>
         )}
       </Paper>
 
@@ -1456,6 +1484,58 @@ const ExpenseEntry = () => {
           </Fab>
         </>
       )}
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog
+        open={deleteConfirm.open}
+        onClose={() => setDeleteConfirm({ open: false, id: null })}
+        maxWidth="xs"
+        fullWidth
+      >
+        <DialogTitle sx={{ pb: 1 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <DeleteIcon color="error" />
+            <Typography variant="h6" fontWeight="bold">Delete Expense?</Typography>
+          </Box>
+        </DialogTitle>
+        <DialogContent>
+          <Typography variant="body2" color="text.secondary">
+            This will permanently remove this expense.
+          </Typography>
+        </DialogContent>
+        <DialogActions sx={{ 
+          p: 2, 
+          gap: 2, 
+          flexDirection: { xs: 'column', sm: 'row' },
+          '& > button': {
+            width: { xs: '100%', sm: 'auto' }
+          }
+        }}>
+          <Button 
+            onClick={() => setDeleteConfirm({ open: false, id: null })}
+            variant="outlined"
+            size="large"
+            sx={{ 
+              minWidth: { xs: '100%', sm: 120 },
+              order: { xs: 2, sm: 1 }
+            }}
+          >
+            Cancel
+          </Button>
+          <Button 
+            onClick={confirmDelete}
+            variant="contained"
+            color="error"
+            size="large"
+            sx={{ 
+              minWidth: { xs: '100%', sm: 120 },
+              order: { xs: 1, sm: 2 }
+            }}
+          >
+            Delete
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       {/* Snackbar for notifications */}
       <Snackbar

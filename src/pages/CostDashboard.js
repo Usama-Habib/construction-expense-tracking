@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import {
   Container,
   Typography,
@@ -22,6 +22,9 @@ import {
   CardContent,
   Grid,
   Divider,
+  Stack,
+  useTheme,
+  useMediaQuery,
 } from '@mui/material';
 import WarningIcon from '@mui/icons-material/Warning';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
@@ -30,6 +33,8 @@ import CalculateIcon from '@mui/icons-material/Calculate';
 import { useExpense } from '../contexts/ExpenseContext';
 
 const CostDashboard = () => {
+  const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
   const { projectConfig, expenses, paymentStages } = useExpense();
   const [tabValue, setTabValue] = useState(0);
   
@@ -172,11 +177,6 @@ const CostDashboard = () => {
   // Calculate committed cost from payment schedule
   const calculateCommittedCost = () => {
     if (!config.paymentMilestones) return 0;
-    
-    const totalPercentage = config.paymentMilestones.reduce(
-      (sum, m) => sum + (parseFloat(m.percentage) || 0), 
-      0
-    );
     
     // Total committed based on all levels being FF
     const foundationCost = (parseFloat(config.foundationArea) || 0) * (parseFloat(config.myFoundationRate) || 0);
@@ -427,80 +427,349 @@ const CostDashboard = () => {
             )}
           </Alert>
         )}
-        <TableContainer component={Paper} sx={{ mb: 3 }}>
-          <Table size="small">
-        <TableHead>
-          <TableRow sx={{ bgcolor: 'primary.main' }}>
-            <TableCell sx={{ color: 'white', fontWeight: 'bold' }}>Level</TableCell>
-            <TableCell align="right" sx={{ color: 'white', fontWeight: 'bold' }}>Paid</TableCell>
-            <TableCell align="right" sx={{ color: 'white', fontWeight: 'bold' }}>Actual Cost</TableCell>
-            <TableCell align="right" sx={{ color: 'white', fontWeight: 'bold' }}>Committed</TableCell>
-            <TableCell align="right" sx={{ color: 'white', fontWeight: 'bold' }}>External</TableCell>
-            <TableCell align="center" sx={{ color: 'white', fontWeight: 'bold' }}>Status</TableCell>
-          </TableRow>
-        </TableHead>
-        <TableBody>
-          {levels.map((level) => {
-            const overpaid = level.paidAmount > level.committedCost;
-            const savings = level.externalCost - level.actualCost;
-            
-            return (
-              <TableRow key={level.key}>
-                <TableCell sx={{ fontWeight: 'bold' }}>{level.name}</TableCell>
-                <TableCell align="right" sx={{ fontWeight: 'bold', color: level.paidAmount > 0 ? 'success.main' : 'text.primary' }}>
-                  Rs {Math.round(level.paidAmount).toLocaleString()}
-                </TableCell>
-                <TableCell align="right">
-                  Rs {Math.round(level.actualCost).toLocaleString()}
-                </TableCell>
-                <TableCell align="right">
-                  Rs {Math.round(level.committedCost).toLocaleString()}
-                </TableCell>
-                <TableCell align="right">
-                  Rs {Math.round(level.externalCost).toLocaleString()}
-                </TableCell>
-                <TableCell align="center">
-                  {overpaid ? (
-                    <Chip
-                      icon={<WarningIcon />}
-                      label="Overpaid"
-                      color="error"
-                      size="small"
-                    />
-                  ) : (
-                    <Chip
-                      icon={<CheckCircleIcon />}
-                      label="On Track"
-                      color="success"
-                      size="small"
-                    />
-                  )}
-                </TableCell>
-              </TableRow>
-            );
-          })}
-          <TableRow sx={{ bgcolor: 'grey.100' }}>
-            <TableCell sx={{ fontWeight: 'bold' }}>TOTAL</TableCell>
-            <TableCell align="right" sx={{ fontWeight: 'bold', color: 'success.main' }}>
-              Rs {Math.round(levels.reduce((sum, l) => sum + l.paidAmount, 0)).toLocaleString()}
-            </TableCell>
-            <TableCell align="right" sx={{ fontWeight: 'bold' }}>
-              Rs {Math.round(levels.reduce((sum, l) => sum + l.actualCost, 0)).toLocaleString()}
-            </TableCell>
-            <TableCell align="right" sx={{ fontWeight: 'bold' }}>
-              Rs {Math.round(committedTotal).toLocaleString()}
-            </TableCell>
-            <TableCell align="right" sx={{ fontWeight: 'bold' }}>
-              Rs {Math.round(levels.reduce((sum, l) => sum + l.externalCost, 0)).toLocaleString()}
-            </TableCell>
-            <TableCell></TableCell>
-          </TableRow>
-        </TableBody>
-      </Table>
-    </TableContainer>
+        
+        <Paper elevation={3} sx={{ mb: 3 }}>
+          <Box sx={{ 
+            p: 2.5, 
+            borderBottom: '2px solid',
+            borderColor: 'primary.main',
+            background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+            color: 'white'
+          }}>
+            <Typography variant="h6" fontWeight="bold">
+              💹 Cost Comparison by Level
+            </Typography>
+            <Typography variant="caption">
+              Compare paid vs committed costs across construction levels
+            </Typography>
+          </Box>
+        
+        {isMobile ? (
+          // CARD VIEW for Mobile
+          <Box sx={{ p: 2 }}>
+            <Stack spacing={2}>
+              {levels.map((level, index) => {
+                const overpaid = level.paidAmount > level.committedCost;
+                
+                return (
+                  <Card 
+                    key={level.key}
+                    elevation={2}
+                    sx={{ 
+                      borderLeft: `6px solid ${
+                        index === 0 ? '#9e9e9e' :
+                        index === 1 ? '#2196f3' :
+                        index === 2 ? '#9c27b0' :
+                        '#00bcd4'
+                      }`,
+                      '&:active': {
+                        transform: 'scale(0.98)',
+                        transition: 'transform 0.1s'
+                      }
+                    }}
+                  >
+                    <CardContent>
+                      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+                        <Chip 
+                          label={level.name} 
+                          size="small"
+                          sx={{
+                            bgcolor: 
+                              index === 0 ? '#9e9e9e' :
+                              index === 1 ? '#2196f3' :
+                              index === 2 ? '#9c27b0' :
+                              '#00bcd4',
+                            color: 'white',
+                            fontWeight: 700,
+                            fontSize: '0.9rem'
+                          }}
+                        />
+                        {overpaid ? (
+                          <Chip
+                            icon={<WarningIcon />}
+                            label="Overpaid"
+                            color="error"
+                            size="small"
+                          />
+                        ) : (
+                          <Chip
+                            icon={<CheckCircleIcon />}
+                            label="On Track"
+                            color="success"
+                            size="small"
+                          />
+                        )}
+                      </Box>
+                      
+                      <Box sx={{ 
+                        display: 'grid', 
+                        gridTemplateColumns: '1fr 1fr',
+                        gap: 2,
+                        mb: 2
+                      }}>
+                        <Box>
+                          <Typography variant="caption" color="text.secondary" sx={{ display: 'block', fontSize: '0.7rem' }}>
+                            💰 Paid
+                          </Typography>
+                          <Typography variant="h6" fontWeight="bold" color={level.paidAmount > 0 ? 'success.main' : 'text.secondary'}>
+                            {Math.round(level.paidAmount).toLocaleString()}
+                          </Typography>
+                        </Box>
+                        <Box>
+                          <Typography variant="caption" color="text.secondary" sx={{ display: 'block', fontSize: '0.7rem' }}>
+                            📊 Actual Cost
+                          </Typography>
+                          <Typography variant="h6" fontWeight="bold">
+                            {Math.round(level.actualCost).toLocaleString()}
+                          </Typography>
+                        </Box>
+                      </Box>
+                      
+                      <Divider sx={{ my: 1.5 }} />
+                      
+                      <Box sx={{ 
+                        display: 'grid', 
+                        gridTemplateColumns: '1fr 1fr',
+                        gap: 2
+                      }}>
+                        <Box>
+                          <Typography variant="caption" color="text.secondary" sx={{ display: 'block', fontSize: '0.7rem' }}>
+                            📝 Committed
+                          </Typography>
+                          <Typography variant="body1" fontWeight={600}>
+                            {Math.round(level.committedCost).toLocaleString()}
+                          </Typography>
+                        </Box>
+                        <Box>
+                          <Typography variant="caption" color="text.secondary" sx={{ display: 'block', fontSize: '0.7rem' }}>
+                            🏗️ External
+                          </Typography>
+                          <Typography variant="body1" fontWeight={600} color="warning.main">
+                            {Math.round(level.externalCost).toLocaleString()}
+                          </Typography>
+                        </Box>
+                      </Box>
+                    </CardContent>
+                  </Card>
+                );
+              })}
+              
+              {/* Total Card */}
+              <Card 
+                elevation={3}
+                sx={{ 
+                  background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                  color: 'white'
+                }}
+              >
+                <CardContent>
+                  <Typography variant="h6" fontWeight="bold" sx={{ mb: 2 }}>
+                    💎 TOTAL
+                  </Typography>
+                  <Box sx={{ 
+                    display: 'grid', 
+                    gridTemplateColumns: '1fr 1fr',
+                    gap: 2,
+                    mb: 2
+                  }}>
+                    <Box>
+                      <Typography variant="caption" sx={{ display: 'block', fontSize: '0.7rem', opacity: 0.9 }}>
+                        Paid
+                      </Typography>
+                      <Typography variant="h6" fontWeight="bold">
+                        {Math.round(levels.reduce((sum, l) => sum + l.paidAmount, 0)).toLocaleString()}
+                      </Typography>
+                    </Box>
+                    <Box>
+                      <Typography variant="caption" sx={{ display: 'block', fontSize: '0.7rem', opacity: 0.9 }}>
+                        Actual
+                      </Typography>
+                      <Typography variant="h6" fontWeight="bold">
+                        {Math.round(levels.reduce((sum, l) => sum + l.actualCost, 0)).toLocaleString()}
+                      </Typography>
+                    </Box>
+                  </Box>
+                  <Box sx={{ 
+                    display: 'grid', 
+                    gridTemplateColumns: '1fr 1fr',
+                    gap: 2
+                  }}>
+                    <Box>
+                      <Typography variant="caption" sx={{ display: 'block', fontSize: '0.7rem', opacity: 0.9 }}>
+                        Committed
+                      </Typography>
+                      <Typography variant="body1" fontWeight="bold">
+                        {Math.round(committedTotal).toLocaleString()}
+                      </Typography>
+                    </Box>
+                    <Box>
+                      <Typography variant="caption" sx={{ display: 'block', fontSize: '0.7rem', opacity: 0.9 }}>
+                        External
+                      </Typography>
+                      <Typography variant="body1" fontWeight="bold">
+                        {Math.round(levels.reduce((sum, l) => sum + l.externalCost, 0)).toLocaleString()}
+                      </Typography>
+                    </Box>
+                  </Box>
+                </CardContent>
+              </Card>
+            </Stack>
+          </Box>
+        ) : (
+          // TABLE VIEW for Desktop
+          <TableContainer sx={{ 
+            maxHeight: { xs: 400, md: 600 },
+            overflow: 'auto',
+            '& table': {
+              minWidth: { xs: 'auto', md: 650 }
+            }
+          }}>
+            <Table stickyHeader size="small">
+              <TableHead>
+                <TableRow>
+                  <TableCell sx={{ 
+                    bgcolor: 'grey.100', 
+                    fontWeight: 'bold',
+                    fontSize: '0.875rem',
+                    py: 2,
+                    minWidth: 120
+                  }}>Level</TableCell>
+                  <TableCell align="right" sx={{ 
+                    bgcolor: 'grey.100', 
+                    fontWeight: 'bold',
+                    fontSize: '0.875rem',
+                    py: 2,
+                    minWidth: 110
+                  }}>Paid</TableCell>
+                  <TableCell align="right" sx={{ 
+                    bgcolor: 'grey.100', 
+                    fontWeight: 'bold',
+                    fontSize: '0.875rem',
+                    py: 2,
+                    minWidth: 120
+                  }}>Actual Cost</TableCell>
+                  <TableCell align="right" sx={{ 
+                    bgcolor: 'grey.100', 
+                    fontWeight: 'bold',
+                    fontSize: '0.875rem',
+                    py: 2,
+                    minWidth: 120
+                  }}>Committed</TableCell>
+                  <TableCell align="right" sx={{ 
+                    bgcolor: 'grey.100', 
+                    fontWeight: 'bold',
+                    fontSize: '0.875rem',
+                    py: 2,
+                    minWidth: 120
+                  }}>External</TableCell>
+                  <TableCell align="center" sx={{ 
+                    bgcolor: 'grey.100', 
+                    fontWeight: 'bold',
+                    fontSize: '0.875rem',
+                    py: 2,
+                    minWidth: 100
+                  }}>Status</TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {levels.map((level, index) => {
+                  const overpaid = level.paidAmount > level.committedCost;
+                  
+                  return (
+                    <TableRow 
+                      key={level.key}
+                      sx={{ 
+                        '&:nth-of-type(odd)': { bgcolor: 'grey.50' },
+                        '&:hover': { bgcolor: 'action.hover' },
+                        transition: 'background-color 0.2s'
+                      }}
+                    >
+                      <TableCell sx={{ fontWeight: 'bold', py: 2 }}>
+                        <Chip 
+                          label={level.name} 
+                          size="small"
+                          sx={{
+                            bgcolor: 
+                              index === 0 ? '#9e9e9e' :
+                              index === 1 ? '#2196f3' :
+                              index === 2 ? '#9c27b0' :
+                              '#00bcd4',
+                            color: 'white',
+                            fontWeight: 600
+                          }}
+                        />
+                      </TableCell>
+                      <TableCell align="right" sx={{ py: 2 }}>
+                        <Typography 
+                          variant="body2" 
+                          fontWeight="bold" 
+                          color={level.paidAmount > 0 ? 'success.main' : 'text.secondary'}
+                        >
+                          Rs {Math.round(level.paidAmount).toLocaleString()}
+                        </Typography>
+                      </TableCell>
+                      <TableCell align="right" sx={{ py: 2 }}>
+                        <Typography variant="body2">
+                          Rs {Math.round(level.actualCost).toLocaleString()}
+                        </Typography>
+                      </TableCell>
+                      <TableCell align="right" sx={{ py: 2 }}>
+                        <Typography variant="body2">
+                          Rs {Math.round(level.committedCost).toLocaleString()}
+                        </Typography>
+                      </TableCell>
+                      <TableCell align="right" sx={{ py: 2 }}>
+                        <Typography variant="body2" color="warning.main">
+                          Rs {Math.round(level.externalCost).toLocaleString()}
+                        </Typography>
+                      </TableCell>
+                      <TableCell align="center" sx={{ py: 2 }}>
+                        {overpaid ? (
+                          <Chip
+                            icon={<WarningIcon />}
+                            label="Overpaid"
+                            color="error"
+                            size="small"
+                          />
+                        ) : (
+                          <Chip
+                            icon={<CheckCircleIcon />}
+                            label="On Track"
+                            color="success"
+                            size="small"
+                          />
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+                <TableRow sx={{ 
+                  bgcolor: 'primary.main',
+                  '& td': { color: 'white' }
+                }}>
+                  <TableCell sx={{ fontWeight: 'bold', fontSize: '1rem', py: 2.5 }}>TOTAL</TableCell>
+                  <TableCell align="right" sx={{ fontWeight: 'bold', fontSize: '1rem', py: 2.5 }}>
+                    Rs {Math.round(levels.reduce((sum, l) => sum + l.paidAmount, 0)).toLocaleString()}
+                  </TableCell>
+                  <TableCell align="right" sx={{ fontWeight: 'bold', fontSize: '1rem', py: 2.5 }}>
+                    Rs {Math.round(levels.reduce((sum, l) => sum + l.actualCost, 0)).toLocaleString()}
+                  </TableCell>
+                  <TableCell align="right" sx={{ fontWeight: 'bold', fontSize: '1rem', py: 2.5 }}>
+                    Rs {Math.round(committedTotal).toLocaleString()}
+                  </TableCell>
+                  <TableCell align="right" sx={{ fontWeight: 'bold', fontSize: '1rem', py: 2.5 }}>
+                    Rs {Math.round(levels.reduce((sum, l) => sum + l.externalCost, 0)).toLocaleString()}
+                  </TableCell>
+                  <TableCell sx={{ py: 2.5 }}></TableCell>
+                </TableRow>
+              </TableBody>
+            </Table>
+          </TableContainer>
+        )}
+      </Paper>
     </Box>
-    );
-  };
+  );
+};
 
   const renderConstructionCalculator = () => (
     <Box>
@@ -515,7 +784,7 @@ const CostDashboard = () => {
       </Alert>
 
       <Grid container spacing={2} sx={{ mb: 3 }}>
-        <Grid item xs={12} sm={6} md={3}>
+        <Grid item xs={12} sm={4} md={4}>
           <FormControl fullWidth size="small">
             <InputLabel>Ground Floor</InputLabel>
             <Select
@@ -529,7 +798,7 @@ const CostDashboard = () => {
           </FormControl>
         </Grid>
 
-        <Grid item xs={12} sm={6} md={3}>
+        <Grid item xs={12} sm={4} md={4}>
           <FormControl fullWidth size="small">
             <InputLabel>First Floor</InputLabel>
             <Select
@@ -543,7 +812,7 @@ const CostDashboard = () => {
           </FormControl>
         </Grid>
 
-        <Grid item xs={12} sm={6} md={3}>
+        <Grid item xs={12} sm={4} md={4}>
           <FormControl fullWidth size="small">
             <InputLabel>Second Floor</InputLabel>
             <Select
@@ -557,11 +826,17 @@ const CostDashboard = () => {
           </FormControl>
         </Grid>
 
-        <Grid item xs={12} sm={6} md={3}>
-          <Card sx={{ bgcolor: 'primary.main', color: 'white', height: '100%' }}>
-            <CardContent sx={{ py: 1.5 }}>
-              <Typography variant="caption">Total Cost</Typography>
-              <Typography variant="h6" sx={{ fontWeight: 'bold' }}>
+        <Grid item xs={12}>
+          <Card sx={{ 
+            background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', 
+            color: 'white',
+            boxShadow: 3
+          }}>
+            <CardContent sx={{ py: 2, textAlign: 'center' }}>
+              <Typography variant="body2" sx={{ mb: 1, opacity: 0.9 }}>
+                💰 Estimated Total Cost
+              </Typography>
+              <Typography variant="h4" sx={{ fontWeight: 'bold' }}>
                 Rs {Math.round(planCost).toLocaleString()}
               </Typography>
             </CardContent>
@@ -637,32 +912,44 @@ const CostDashboard = () => {
   );
 
   return (
-    <Container maxWidth="lg" sx={{ mt: { xs: 2, md: 4 }, mb: 4, px: { xs: 2, md: 3 } }}>
-      <Typography variant="h5" sx={{ fontWeight: 'bold', mb: 1 }}>
-        💰 Cost Analysis
-      </Typography>
-      <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
-        Compare costs, validate payments, and calculate scenarios
-      </Typography>
+    <Box sx={{ 
+      width: '100%', 
+      height: '100vh',
+      overflow: 'auto',
+      bgcolor: '#f5f7fa'
+    }}>
+      <Container maxWidth="xl" sx={{ 
+        py: { xs: 2, md: 3 }, 
+        px: { xs: 2, md: 3 },
+        minHeight: '100%',
+        maxWidth: '100%'
+      }}>
+        <Typography variant="h5" sx={{ fontWeight: 'bold', mb: 1 }}>
+          💰 Cost Analysis
+        </Typography>
+        <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
+          Compare costs, validate payments, and calculate scenarios
+        </Typography>
 
-      <Box sx={{ borderBottom: 1, borderColor: 'divider', mb: 3 }}>
-        <Tabs value={tabValue} onChange={(e, newValue) => setTabValue(newValue)}>
-          <Tab 
-            label="Cost Comparison" 
-            icon={<CompareArrowsIcon />} 
-            iconPosition="start"
-          />
-          <Tab 
-            label="Construction Calculator" 
-            icon={<CalculateIcon />} 
-            iconPosition="start"
-          />
-        </Tabs>
-      </Box>
+        <Box sx={{ borderBottom: 1, borderColor: 'divider', mb: 3 }}>
+          <Tabs value={tabValue} onChange={(e, newValue) => setTabValue(newValue)}>
+            <Tab 
+              label="Cost Comparison" 
+              icon={<CompareArrowsIcon />} 
+              iconPosition="start"
+            />
+            <Tab 
+              label="Construction Calculator" 
+              icon={<CalculateIcon />} 
+              iconPosition="start"
+            />
+          </Tabs>
+        </Box>
 
-      {tabValue === 0 && renderCostComparisonTable()}
-      {tabValue === 1 && renderConstructionCalculator()}
-    </Container>
+        {tabValue === 0 && renderCostComparisonTable()}
+        {tabValue === 1 && renderConstructionCalculator()}
+      </Container>
+    </Box>
   );
 };
 

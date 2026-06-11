@@ -233,15 +233,28 @@ const PaymentAnalyzer = () => {
   }
 
   return (
-    <Container maxWidth="lg" sx={{ mt: 4, mb: 4 }}>
-      <Typography variant="h4" gutterBottom sx={{ fontWeight: 'bold', color: '#2c3e50' }}>
-        💰 Payment vs Work Analyzer
-      </Typography>
-      <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
-        Monitor payment alignment with actual work completed
-      </Typography>
+    <Box sx={{ 
+      width: '100%', 
+      height: '100vh',
+      overflow: 'auto',
+      bgcolor: '#f5f7fa'
+    }}>
+      <Container maxWidth="xl" sx={{ 
+        py: { xs: 2, md: 3 }, 
+        px: { xs: 2, md: 3 },
+        minHeight: '100%',
+        maxWidth: '100%'
+      }}>
+        <Box sx={{ mb: 3 }}>
+          <Typography variant="h4" gutterBottom sx={{ fontWeight: 'bold', color: '#2c3e50' }}>
+            💰 Payment vs Work Analyzer
+          </Typography>
+          <Typography variant="body2" color="text.secondary">
+            Monitor payment alignment with actual work completed
+          </Typography>
+        </Box>
 
-      <Grid container spacing={3}>
+        <Grid container spacing={3}>
         {/* Key Metrics */}
         <Grid item xs={12} md={6}>
           <Card sx={{ height: '100%', bgcolor: '#e3f2fd' }}>
@@ -398,7 +411,7 @@ const PaymentAnalyzer = () => {
             
             <Grid container spacing={3}>
               <Grid item xs={12} md={6}>
-                <TableContainer>
+                <TableContainer sx={{ maxHeight: 400, overflow: 'auto' }}>
                   <Table>
                     <TableBody>
                       <TableRow>
@@ -529,7 +542,7 @@ const PaymentAnalyzer = () => {
             <Typography variant="h6" gutterBottom>
               📋 Detailed Work Value Breakdown
             </Typography>
-            <TableContainer>
+            <TableContainer sx={{ maxHeight: 500, overflow: 'auto' }}>
               <Table>
                 <TableHead>
                   <TableRow>
@@ -624,8 +637,9 @@ const PaymentAnalyzer = () => {
             </ul>
           </Alert>
         </Grid>
-      </Grid>
-    </Container>
+        </Grid>
+      </Container>
+    </Box>
   );
 };
 

@@ -299,14 +299,34 @@ const Management = () => {
             </Grid>
           </Grid>
         </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setCategoryDialog({ open: false, editing: null })}>
+        <DialogActions sx={{ 
+          p: 2, 
+          gap: 2, 
+          flexDirection: { xs: 'column', sm: 'row' },
+          '& > button': {
+            width: { xs: '100%', sm: 'auto' }
+          }
+        }}>
+          <Button 
+            onClick={() => setCategoryDialog({ open: false, editing: null })}
+            variant="outlined"
+            size="large"
+            sx={{ 
+              minWidth: { xs: '100%', sm: 120 },
+              order: { xs: 2, sm: 1 }
+            }}
+          >
             Cancel
           </Button>
           <Button
             onClick={handleCategorySubmit}
             variant="contained"
+            size="large"
             disabled={!categoryForm.name}
+            sx={{ 
+              minWidth: { xs: '100%', sm: 120 },
+              order: { xs: 1, sm: 2 }
+            }}
           >
             {categoryDialog.editing ? 'Update' : 'Add'}
           </Button>
@@ -363,14 +383,34 @@ const Management = () => {
             </Grid>
           </Grid>
         </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setVendorDialog({ open: false, editing: null })}>
+        <DialogActions sx={{ 
+          p: 2, 
+          gap: 2, 
+          flexDirection: { xs: 'column', sm: 'row' },
+          '& > button': {
+            width: { xs: '100%', sm: 'auto' }
+          }
+        }}>
+          <Button 
+            onClick={() => setVendorDialog({ open: false, editing: null })}
+            variant="outlined"
+            size="large"
+            sx={{ 
+              minWidth: { xs: '100%', sm: 120 },
+              order: { xs: 2, sm: 1 }
+            }}
+          >
             Cancel
           </Button>
           <Button
             onClick={handleVendorSubmit}
             variant="contained"
+            size="large"
             disabled={!vendorForm.name}
+            sx={{ 
+              minWidth: { xs: '100%', sm: 120 },
+              order: { xs: 1, sm: 2 }
+            }}
           >
             {vendorDialog.editing ? 'Update' : 'Add'}
           </Button>

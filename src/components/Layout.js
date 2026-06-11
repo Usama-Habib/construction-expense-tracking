@@ -55,6 +55,11 @@ const Layout = ({ children }) => {
     { text: 'Settings', icon: <SettingsIcon />, path: '/settings' },
   ];
 
+  // Bottom navigation items (exclude Reports and Settings for better mobile UX)
+  const bottomNavItems = menuItems.filter(item => 
+    !['Reports', 'Settings'].includes(item.text)
+  );
+
   const handleDrawerToggle = () => {
     setMobileOpen(!mobileOpen);
   };
@@ -237,10 +242,12 @@ const Layout = ({ children }) => {
         component="main"
         sx={{
           flexGrow: 1,
-          p: { xs: 0, sm: 1, md: 3 },
-          width: { md: `calc(100% - ${currentDrawerWidth}px)` },
+          p: 0,
+          width: { xs: '100%', md: `calc(100% - ${currentDrawerWidth}px)` },
+          maxWidth: '100vw',
           minHeight: '100vh',
           backgroundColor: '#f5f5f5',
+          overflow: 'hidden',
           transition: theme.transitions.create('width', {
             easing: theme.transitions.easing.sharp,
             duration: theme.transitions.duration.enteringScreen,
@@ -291,7 +298,7 @@ const Layout = ({ children }) => {
               },
             }}
           >
-            {menuItems.map((item) => (
+            {bottomNavItems.map((item) => (
               <BottomNavigationAction
                 key={item.path}
                 label={item.text}

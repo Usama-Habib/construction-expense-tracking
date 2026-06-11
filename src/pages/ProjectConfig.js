@@ -24,6 +24,16 @@ import {
   Chip,
   Checkbox,
   ListItemText,
+  Card,
+  CardContent,
+  CardActions,
+  Stack,
+  useTheme,
+  useMediaQuery,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
 } from '@mui/material';
 import SaveIcon from '@mui/icons-material/Save';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
@@ -32,8 +42,11 @@ import AddIcon from '@mui/icons-material/Add';
 import { useExpense } from '../contexts/ExpenseContext';
 
 const ProjectConfig = () => {
+  const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
   const { projectConfig, saveProjectConfig } = useExpense();
   const [saveSuccess, setSaveSuccess] = useState(false);
+  const [deleteConfirm, setDeleteConfirm] = useState({ open: false, index: null });
   
   const defaultMilestones = [
     { stage: 'Mobilization advance', percentage: 15, description: 'Initial advance payment', levels: ['foundation'] },
@@ -114,10 +127,17 @@ const ProjectConfig = () => {
   };
 
   const removeMilestone = (index) => {
-    setConfig(prev => ({
-      ...prev,
-      paymentMilestones: prev.paymentMilestones.filter((_, i) => i !== index)
-    }));
+    setDeleteConfirm({ open: true, index });
+  };
+
+  const confirmRemoveMilestone = () => {
+    if (deleteConfirm.index !== null) {
+      setConfig(prev => ({
+        ...prev,
+        paymentMilestones: prev.paymentMilestones.filter((_, i) => i !== deleteConfirm.index)
+      }));
+    }
+    setDeleteConfirm({ open: false, index: null });
   };
 
   const totalPercentage = config.paymentMilestones.reduce((sum, m) => sum + (parseFloat(m.percentage) || 0), 0);
@@ -132,13 +152,24 @@ const ProjectConfig = () => {
   };
 
   return (
-    <Container maxWidth="lg" sx={{ mt: { xs: 2, md: 4 }, mb: 4, px: { xs: 2, md: 3 } }}>
-      <Typography variant="h5" sx={{ fontWeight: 'bold', mb: 1 }}>
-        ⚙️ Project Setup
-      </Typography>
-      <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
-        Configure rates, areas, and payment schedule
-      </Typography>
+    <Box sx={{ 
+      width: '100%', 
+      height: '100vh',
+      overflow: 'auto',
+      bgcolor: '#f5f7fa'
+    }}>
+      <Container maxWidth="xl" sx={{ 
+        py: { xs: 2, md: 3 }, 
+        px: { xs: 2, md: 3 },
+        minHeight: '100%',
+        maxWidth: '100%'
+      }}>
+        <Typography variant="h5" sx={{ fontWeight: 'bold', mb: 1 }}>
+          ⚙️ Project Setup
+        </Typography>
+        <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
+          Configure rates, areas, and payment schedule
+        </Typography>
 
       {/* Areas */}
       <Accordion defaultExpanded sx={{ mb: 2 }}>
@@ -324,86 +355,213 @@ const ProjectConfig = () => {
               </Alert>
             )}
             
-            <TableContainer>
-              <Table size="small">
-                <TableHead>
-                  <TableRow>
-                    <TableCell>Stage</TableCell>
-                    <TableCell>Level</TableCell>
-                    <TableCell align="right">%</TableCell>
-                    <TableCell align="right">Actions</TableCell>
-                  </TableRow>
-                </TableHead>
-                <TableBody>
-                  {config.paymentMilestones.map((milestone, index) => (
-                    <TableRow key={index}>
-                      <TableCell>
-                        <TextField
-                          fullWidth
-                          size="small"
-                          value={milestone.stage}
-                          onChange={(e) => handleMilestoneChange(index, 'stage', e.target.value)}
-                          placeholder="Stage name"
+            {isMobile ? (
+              // CARD VIEW for Mobile
+              <Stack spacing={2}>
+                {config.paymentMilestones.map((milestone, index) => (
+                  <Card 
+                    key={index}
+                    elevation={2}
+                    sx={{ 
+                      borderLeft: `4px solid ${theme.palette.primary.main}`,
+                      '&:active': {
+                        transform: 'scale(0.98)',
+                        transition: 'transform 0.1s'
+                      }
+                    }}
+                  >
+                    <CardContent sx={{ pb: 1 }}>
+                      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 2 }}>
+                        <Chip 
+                          label={`Stage ${index + 1}`} 
+                          size="small" 
+                          color="primary" 
+                          sx={{ fontWeight: 600 }}
                         />
-                      </TableCell>
-                      <TableCell sx={{ width: 200 }}>
-                        <FormControl fullWidth size="small">
-                          <Select
-                            multiple
-                            value={milestone.levels || (milestone.level ? [milestone.level] : [])}
-                            onChange={(e) => handleMilestoneChange(index, 'levels', e.target.value)}
-                            renderValue={(selected) => (
+                        <Chip 
+                          label={`${milestone.percentage}%`} 
+                          size="small" 
+                          color="success"
+                          sx={{ fontWeight: 700, fontSize: '0.85rem' }}
+                        />
+                      </Box>
+                      
+                      <TextField
+                        fullWidth
+                        size="small"
+                        label="🏗️ Stage Name"
+                        value={milestone.stage}
+                        onChange={(e) => handleMilestoneChange(index, 'stage', e.target.value)}
+                        placeholder="Stage name"
+                        sx={{ mb: 2 }}
+                      />
+                      
+                      <FormControl fullWidth size="small" sx={{ mb: 2 }}>
+                        <Select
+                          multiple
+                          displayEmpty
+                          value={milestone.levels || (milestone.level ? [milestone.level] : [])}
+                          onChange={(e) => handleMilestoneChange(index, 'levels', e.target.value)}
+                          renderValue={(selected) => (
+                            selected.length === 0 ? (
+                              <Typography variant="body2" color="text.secondary">Select Levels</Typography>
+                            ) : (
                               <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
                                 {selected.map((value) => (
                                   <Chip 
                                     key={value} 
                                     label={value.charAt(0).toUpperCase() + value.slice(1)} 
                                     size="small"
-                                    sx={{ height: 20, fontSize: '0.7rem' }}
+                                    sx={{ 
+                                      height: 22, 
+                                      fontSize: '0.75rem',
+                                      bgcolor: 
+                                        value === 'foundation' ? '#9e9e9e' :
+                                        value === 'ground' ? '#2196f3' :
+                                        value === 'first' ? '#9c27b0' :
+                                        '#00bcd4',
+                                      color: 'white'
+                                    }}
                                   />
                                 ))}
                               </Box>
-                            )}
-                          >
-                            <MenuItem value="foundation">
-                              <Checkbox checked={(milestone.levels || (milestone.level ? [milestone.level] : [])).indexOf('foundation') > -1} />
-                              <ListItemText primary="Foundation" />
-                            </MenuItem>
-                            <MenuItem value="ground">
-                              <Checkbox checked={(milestone.levels || (milestone.level ? [milestone.level] : [])).indexOf('ground') > -1} />
-                              <ListItemText primary="Ground" />
-                            </MenuItem>
-                            <MenuItem value="first">
-                              <Checkbox checked={(milestone.levels || (milestone.level ? [milestone.level] : [])).indexOf('first') > -1} />
-                              <ListItemText primary="First" />
-                            </MenuItem>
-                            <MenuItem value="second">
-                              <Checkbox checked={(milestone.levels || (milestone.level ? [milestone.level] : [])).indexOf('second') > -1} />
-                              <ListItemText primary="Second" />
-                            </MenuItem>
-                          </Select>
-                        </FormControl>
-                      </TableCell>
-                      <TableCell align="right" sx={{ width: 100 }}>
-                        <TextField
-                          size="small"
-                          type="number"
-                          value={milestone.percentage}
-                          onChange={(e) => handleMilestoneChange(index, 'percentage', parseFloat(e.target.value) || 0)}
-                          InputProps={{ endAdornment: <InputAdornment position="end">%</InputAdornment> }}
-                          sx={{ width: 90 }}
-                        />
-                      </TableCell>
-                      <TableCell align="right" sx={{ width: 60 }}>
-                        <IconButton size="small" color="error" onClick={() => removeMilestone(index)}>
-                          <DeleteIcon fontSize="small" />
-                        </IconButton>
-                      </TableCell>
+                            )
+                          )}
+                        >
+                          <MenuItem value="foundation">
+                            <Checkbox checked={(milestone.levels || (milestone.level ? [milestone.level] : [])).indexOf('foundation') > -1} />
+                            <ListItemText primary="🏗️ Foundation" />
+                          </MenuItem>
+                          <MenuItem value="ground">
+                            <Checkbox checked={(milestone.levels || (milestone.level ? [milestone.level] : [])).indexOf('ground') > -1} />
+                            <ListItemText primary="🏠 Ground" />
+                          </MenuItem>
+                          <MenuItem value="first">
+                            <Checkbox checked={(milestone.levels || (milestone.level ? [milestone.level] : [])).indexOf('first') > -1} />
+                            <ListItemText primary="1️⃣ First" />
+                          </MenuItem>
+                          <MenuItem value="second">
+                            <Checkbox checked={(milestone.levels || (milestone.level ? [milestone.level] : [])).indexOf('second') > -1} />
+                            <ListItemText primary="2️⃣ Second" />
+                          </MenuItem>
+                        </Select>
+                      </FormControl>
+                      
+                      <TextField
+                        fullWidth
+                        size="small"
+                        label="📊 Percentage"
+                        type="number"
+                        value={milestone.percentage}
+                        onChange={(e) => handleMilestoneChange(index, 'percentage', parseFloat(e.target.value) || 0)}
+                        InputProps={{ endAdornment: <InputAdornment position="end">%</InputAdornment> }}
+                      />
+                    </CardContent>
+                    
+                    <CardActions sx={{ justifyContent: 'flex-end', px: 2, pb: 2, pt: 0 }}>
+                      <Button
+                        size="small"
+                        variant="outlined"
+                        color="error"
+                        startIcon={<DeleteIcon />}
+                        onClick={() => removeMilestone(index)}
+                        sx={{ textTransform: 'none' }}
+                      >
+                        Remove
+                      </Button>
+                    </CardActions>
+                  </Card>
+                ))}
+              </Stack>
+            ) : (
+              // TABLE VIEW for Desktop
+              <TableContainer sx={{ 
+                maxHeight: { xs: 400, md: 600 }, 
+                overflow: 'auto',
+                '& table': {
+                  minWidth: { xs: 'auto', md: 650 }
+                }
+              }}>
+                <Table size="small">
+                  <TableHead>
+                    <TableRow>
+                      <TableCell>Stage</TableCell>
+                      <TableCell>Level</TableCell>
+                      <TableCell align="right">%</TableCell>
+                      <TableCell align="right">Actions</TableCell>
                     </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </TableContainer>
+                  </TableHead>
+                  <TableBody>
+                    {config.paymentMilestones.map((milestone, index) => (
+                      <TableRow key={index}>
+                        <TableCell>
+                          <TextField
+                            fullWidth
+                            size="small"
+                            value={milestone.stage}
+                            onChange={(e) => handleMilestoneChange(index, 'stage', e.target.value)}
+                            placeholder="Stage name"
+                          />
+                        </TableCell>
+                        <TableCell sx={{ width: 200 }}>
+                          <FormControl fullWidth size="small">
+                            <Select
+                              multiple
+                              value={milestone.levels || (milestone.level ? [milestone.level] : [])}
+                              onChange={(e) => handleMilestoneChange(index, 'levels', e.target.value)}
+                              renderValue={(selected) => (
+                                <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                                  {selected.map((value) => (
+                                    <Chip 
+                                      key={value} 
+                                      label={value.charAt(0).toUpperCase() + value.slice(1)} 
+                                      size="small"
+                                      sx={{ height: 20, fontSize: '0.7rem' }}
+                                    />
+                                  ))}
+                                </Box>
+                              )}
+                            >
+                              <MenuItem value="foundation">
+                                <Checkbox checked={(milestone.levels || (milestone.level ? [milestone.level] : [])).indexOf('foundation') > -1} />
+                                <ListItemText primary="Foundation" />
+                              </MenuItem>
+                              <MenuItem value="ground">
+                                <Checkbox checked={(milestone.levels || (milestone.level ? [milestone.level] : [])).indexOf('ground') > -1} />
+                                <ListItemText primary="Ground" />
+                              </MenuItem>
+                              <MenuItem value="first">
+                                <Checkbox checked={(milestone.levels || (milestone.level ? [milestone.level] : [])).indexOf('first') > -1} />
+                                <ListItemText primary="First" />
+                              </MenuItem>
+                              <MenuItem value="second">
+                                <Checkbox checked={(milestone.levels || (milestone.level ? [milestone.level] : [])).indexOf('second') > -1} />
+                                <ListItemText primary="Second" />
+                              </MenuItem>
+                            </Select>
+                          </FormControl>
+                        </TableCell>
+                        <TableCell align="right" sx={{ width: 100 }}>
+                          <TextField
+                            size="small"
+                            type="number"
+                            value={milestone.percentage}
+                            onChange={(e) => handleMilestoneChange(index, 'percentage', parseFloat(e.target.value) || 0)}
+                            InputProps={{ endAdornment: <InputAdornment position="end">%</InputAdornment> }}
+                            sx={{ width: 90 }}
+                          />
+                        </TableCell>
+                        <TableCell align="right" sx={{ width: 60 }}>
+                          <IconButton size="small" color="error" onClick={() => removeMilestone(index)}>
+                            <DeleteIcon fontSize="small" />
+                          </IconButton>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </TableContainer>
+            )}
 
             <Button
               startIcon={<AddIcon />}
@@ -436,7 +594,60 @@ const ProjectConfig = () => {
         onClose={() => setSaveSuccess(false)}
         message="✅ Configuration saved successfully!"
       />
-    </Container>
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog
+        open={deleteConfirm.open}
+        onClose={() => setDeleteConfirm({ open: false, index: null })}
+        maxWidth="xs"
+        fullWidth
+      >
+        <DialogTitle sx={{ pb: 1 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <DeleteIcon color="error" />
+            <Typography variant="h6" fontWeight="bold">Remove Stage?</Typography>
+          </Box>
+        </DialogTitle>
+        <DialogContent>
+          <Typography variant="body2" color="text.secondary">
+            This will remove stage {deleteConfirm.index !== null ? deleteConfirm.index + 1 : ''} from your payment schedule.
+          </Typography>
+        </DialogContent>
+        <DialogActions sx={{ 
+          p: 2, 
+          gap: 2, 
+          flexDirection: { xs: 'column', sm: 'row' },
+          '& > button': {
+            width: { xs: '100%', sm: 'auto' }
+          }
+        }}>
+          <Button 
+            onClick={() => setDeleteConfirm({ open: false, index: null })}
+            variant="outlined"
+            size="large"
+            sx={{ 
+              minWidth: { xs: '100%', sm: 120 },
+              order: { xs: 2, sm: 1 }
+            }}
+          >
+            Cancel
+          </Button>
+          <Button 
+            onClick={confirmRemoveMilestone}
+            variant="contained"
+            color="error"
+            size="large"
+            sx={{ 
+              minWidth: { xs: '100%', sm: 120 },
+              order: { xs: 1, sm: 2 }
+            }}
+          >
+            Remove
+          </Button>
+        </DialogActions>
+      </Dialog>
+      </Container>
+    </Box>
   );
 };
 
