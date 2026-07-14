@@ -1,4 +1,5 @@
 import * as XLSX from 'xlsx';
+import { richTextToPlainText } from './richTextUtils';
 
 // Helper functions to calculate amounts (same as Dashboard/ExpenseEntry)
 const getAmount = (exp) => parseFloat(exp.totalAmount || exp.amount) || 0;
@@ -84,7 +85,9 @@ export const exportToExcel = (expenses, categories, vendors) => {
     'Sub-Category': exp.subCategory || '',
     'Area/Floor': exp.area || '',
     Vendor: exp.vendor || '',
-    Description: exp.description || '',
+    Notes: richTextToPlainText(exp.notesHtml || exp.notes || exp.description || ''),
+    'Has Image': exp.imageData ? 'Yes' : 'No',
+    'Image Size KB': exp.imageSizeKb || '',
     Quantity: exp.quantity || '',
     'Total Amount': getAmount(exp),
     'Paid Amount': getPaidAmount(exp),
@@ -102,7 +105,9 @@ export const exportToExcel = (expenses, categories, vendors) => {
     'Sub-Category': '',
     'Area/Floor': '',
     Vendor: '',
-    Description: '',
+    Notes: '',
+    'Has Image': '',
+    'Image Size KB': '',
     Quantity: '',
     'Total Amount': expenses.reduce((sum, exp) => sum + getAmount(exp), 0),
     'Paid Amount': expenses.reduce((sum, exp) => sum + getPaidAmount(exp), 0),
@@ -183,7 +188,14 @@ export const exportToExcel = (expenses, categories, vendors) => {
     Category: cat.name,
     Icon: cat.icon,
     Color: cat.color,
-    'Sub-Categories': cat.subCategories.join(', '),
+    'Sub-Categories': (cat.subCategories || [])
+      .map((sub) => (typeof sub === 'string' ? sub : sub.name))
+      .filter(Boolean)
+      .join(', '),
+    'Disabled Sub-Categories': (cat.subCategories || [])
+      .filter((sub) => typeof sub === 'object' && sub.enabled === false)
+      .map((sub) => sub.name)
+      .join(', '),
   }));
   const ws5 = XLSX.utils.json_to_sheet(categoryList);
   const range5 = ws5['!ref'];
@@ -236,7 +248,8 @@ export const importFromExcel = (file) => {
             subCategory: row['Sub-Category'] || '',
             area: row['Area/Floor'] || '',
             vendor: row.Vendor || '',
-            description: row.Description || '',
+            notes: row.Notes || row.Description || '',
+            notesHtml: row.Notes || row.Description || '',
             quantity: row.Quantity || '',
             totalAmount: parseFloat(row['Total Amount']) || parseFloat(row.Amount) || 0,
             paidAmount: parseFloat(row['Paid Amount']) || 0,
@@ -283,7 +296,9 @@ export const downloadTemplate = () => {
       'Sub-Category': 'Cement',
       'Area/Floor': 'Foundation',
       Vendor: 'ABC Suppliers',
-      Description: '50 bags of cement',
+      Notes: '50 bags of cement',
+      'Has Image': 'No',
+      'Image Size KB': '',
       Quantity: '50 bags',
       'Total Amount': 500,
       'Paid Amount': 300,
@@ -297,7 +312,9 @@ export const downloadTemplate = () => {
       'Sub-Category': 'Skilled',
       'Area/Floor': 'Ground',
       Vendor: 'John Contractor',
-      Description: 'Daily wage - 5 workers',
+      Notes: 'Daily wage - 5 workers',
+      'Has Image': 'No',
+      'Image Size KB': '',
       Quantity: '5 workers',
       'Total Amount': 750,
       'Paid Amount': 750,

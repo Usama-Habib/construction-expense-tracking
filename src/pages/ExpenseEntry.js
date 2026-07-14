@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   Container,
   Paper,
@@ -33,6 +33,8 @@ import {
   DialogTitle,
   DialogContent,
   DialogActions,
+  FormHelperText,
+  Avatar,
 } from '@mui/material';
 import DeleteIcon from '@mui/icons-material/Delete';
 import EditIcon from '@mui/icons-material/Edit';
@@ -42,12 +44,57 @@ import SearchIcon from '@mui/icons-material/Search';
 import SpeedIcon from '@mui/icons-material/Speed';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import ExpandLessIcon from '@mui/icons-material/ExpandLess';
+import ImageIcon from '@mui/icons-material/Image';
+import StarIcon from '@mui/icons-material/Star';
 import { useExpense } from '../contexts/ExpenseContext';
+import BasicRichTextEditor from '../components/BasicRichTextEditor';
+import { sanitizeRichText, richTextToPlainText } from '../utils/richTextUtils';
+import { compressImageFile } from '../utils/imageUtils';
+
+const DEFAULT_AREA_KEY = 'expense_default_area';
+const AREA_OPTIONS = ['Foundation', 'Ground Floor', 'First Floor', 'Second Floor', 'Third Floor', 'Roof/Top', 'General'];
+
+const parseNumber = (value) => {
+  const parsed = parseFloat(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+};
+
+const getPaymentSnapshot = (totalValue, paidValue) => {
+  const total = parseNumber(totalValue);
+  const paid = parseNumber(paidValue);
+  const remaining = total - paid;
+
+  let status = 'Pending';
+  if (paid >= total && total > 0) {
+    status = 'Clear';
+  } else if (paid > 0 && paid < total) {
+    status = 'Partial';
+  }
+
+  return {
+    total,
+    paid,
+    remaining: remaining > 0.001 ? remaining : 0,
+    remainingDisplay: remaining > 0.001 ? remaining.toFixed(2) : '0',
+    status,
+  };
+};
+
+const getSubCategoryName = (subCategory) => {
+  if (typeof subCategory === 'string') return subCategory;
+  return subCategory?.name || '';
+};
+
+const isSubCategoryEnabled = (subCategory) => {
+  if (typeof subCategory === 'string') return true;
+  return subCategory?.enabled !== false;
+};
 
 const ExpenseEntry = () => {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
   const { expenses, categories, vendors, paymentMethods, addExpense, updateExpense, deleteExpense, refreshData, validateAndCleanExpenses, addVendor } = useExpense();
+  const [defaultArea, setDefaultArea] = useState(() => localStorage.getItem(DEFAULT_AREA_KEY) || 'Ground Floor');
   
   const [showForm, setShowForm] = useState(false); // Hide form by default
   const [showFilters, setShowFilters] = useState(!isMobile); // Auto-hide on mobile
@@ -57,14 +104,18 @@ const ExpenseEntry = () => {
     category: '',
     subCategory: '',
     vendor: '',
-    description: '',
     totalAmount: '',
     paidAmount: '',
     remainingAmount: '',
     paymentMethod: '',
-    area: '',
+    area: localStorage.getItem(DEFAULT_AREA_KEY) || 'Ground Floor',
     paymentStatus: 'Pending',
     notes: '',
+    notesHtml: '',
+    imageData: '',
+    imageName: '',
+    imageMimeType: '',
+    imageSizeKb: 0,
     quantity: '',
     unit: '',
     rate: '',
@@ -72,8 +123,9 @@ const ExpenseEntry = () => {
 
   const [editingId, setEditingId] = useState(null);
   const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' });
-  const [paidAmountManuallyEdited, setPaidAmountManuallyEdited] = useState(false);
+  const [isPaidAutoSync, setIsPaidAutoSync] = useState(true);
   const [deleteConfirm, setDeleteConfirm] = useState({ open: false, id: null });
+  const [imagePreview, setImagePreview] = useState({ open: false, src: '', name: '' });
   
   // Filter state
   const [filters, setFilters] = useState({
@@ -86,7 +138,51 @@ const ExpenseEntry = () => {
   });
 
   const selectedCategory = categories.find(cat => cat.name === formData.category);
-  const subCategories = selectedCategory?.subCategories || [];
+  const allSubCategories = selectedCategory?.subCategories || [];
+  const isMaterialCategory = formData.category === 'Material';
+  const subCategories = allSubCategories
+    .filter((sub) => (isMaterialCategory ? isSubCategoryEnabled(sub) : true))
+    .map(getSubCategoryName)
+    .filter(Boolean);
+
+  const persistDefaultArea = (area) => {
+    if (!area) return;
+    localStorage.setItem(DEFAULT_AREA_KEY, area);
+    setDefaultArea(area);
+  };
+
+  const normalizeVendorName = (name = '') => name.trim().toLowerCase();
+
+  const ensureVendorExists = async (vendorName) => {
+    const cleaned = (vendorName || '').trim();
+    if (!cleaned) return;
+
+    const exists = vendors.some((v) => normalizeVendorName(v.name) === normalizeVendorName(cleaned));
+    if (!exists) {
+      await addVendor({ name: cleaned });
+    }
+  };
+
+  const handleImageSelection = async (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    try {
+      const compressed = await compressImageFile(file);
+      setFormData((prev) => ({
+        ...prev,
+        imageData: compressed.dataUrl,
+        imageName: compressed.name,
+        imageMimeType: compressed.mimeType,
+        imageSizeKb: compressed.sizeKb,
+      }));
+      setSnackbar({ open: true, message: `✓ Image attached (${compressed.sizeKb} KB)`, severity: 'success' });
+    } catch (error) {
+      setSnackbar({ open: true, message: error.message || 'Failed to process image', severity: 'error' });
+    } finally {
+      event.target.value = '';
+    }
+  };
 
   // Helper to get amount (backward compatible)
   const getAmount = (exp) => parseFloat(exp.totalAmount || exp.amount) || 0;
@@ -127,12 +223,12 @@ const ExpenseEntry = () => {
   };
 
   // Filter expenses based on all filter criteria
-  const filteredExpenses = expenses.filter(expense => {
+  const filteredExpenses = useMemo(() => expenses.filter(expense => {
     // Search text filter (searches in description, notes, vendor, category, subcategory)
     if (filters.searchText) {
       const searchLower = filters.searchText.toLowerCase();
       const matchesSearch = 
-        (expense.description?.toLowerCase().includes(searchLower)) ||
+        (richTextToPlainText(expense.notesHtml || '').toLowerCase().includes(searchLower)) ||
         (expense.notes?.toLowerCase().includes(searchLower)) ||
         (expense.vendor?.toLowerCase().includes(searchLower)) ||
         (expense.category?.toLowerCase().includes(searchLower)) ||
@@ -164,23 +260,65 @@ const ExpenseEntry = () => {
     }
 
     return true;
-  });
+  }), [expenses, filters]);
 
   // Calculate summary for filtered results
-  const filterSummary = {
+  const filterSummary = useMemo(() => ({
     count: filteredExpenses.length,
     totalAmount: filteredExpenses.reduce((sum, exp) => sum + getAmount(exp), 0),
     totalPaid: filteredExpenses.reduce((sum, exp) => sum + getPaidAmount(exp), 0),
-    totalRemaining: filteredExpenses.reduce((sum, exp) => sum + getRemainingAmount(exp), 0),
+    totalRemaining: filteredExpenses.reduce((sum, exp) => {
+      const total = parseNumber(exp.totalAmount || exp.amount);
+      const paid = parseNumber(
+        exp.paidAmount !== undefined && exp.paidAmount !== null && exp.paidAmount !== ''
+          ? exp.paidAmount
+          : (exp.paymentStatus === 'Clear' || exp.paymentStatus === 'Paid')
+            ? (exp.totalAmount || exp.amount)
+            : 0
+      );
+      const remaining = total - paid;
+      return sum + (remaining > 0.001 ? remaining : 0);
+    }, 0),
     totalQuantity: filteredExpenses.reduce((sum, exp) => {
       const qty = parseFloat(exp.quantity) || 0;
       return sum + qty;
     }, 0),
-  };
+  }), [filteredExpenses]);
 
   // Get unique subcategories for the selected category in filter
-  const filterSelectedCategory = categories.find(cat => cat.name === filters.category);
-  const filterSubCategories = filterSelectedCategory?.subCategories || [];
+  const filterSelectedCategory = useMemo(() => categories.find(cat => cat.name === filters.category), [categories, filters.category]);
+  const filterSubCategories = useMemo(() => (filterSelectedCategory?.subCategories || [])
+    .filter((sub) => (filters.category === 'Material' ? isSubCategoryEnabled(sub) : true))
+    .map(getSubCategoryName)
+    .filter(Boolean), [filterSelectedCategory, filters.category]);
+
+  const autoQuantityTotal = useMemo(() => {
+    const quantity = parseNumber(formData.quantity);
+    const rate = parseNumber(formData.rate);
+    return quantity > 0 && rate > 0 ? (quantity * rate).toFixed(2) : '';
+  }, [formData.quantity, formData.rate]);
+
+  const effectiveTotalAmount = autoQuantityTotal || formData.totalAmount || '';
+
+  const computedPayment = useMemo(() => {
+    const totalCandidate = effectiveTotalAmount;
+    return getPaymentSnapshot(totalCandidate, formData.paidAmount);
+  }, [effectiveTotalAmount, formData.paidAmount]);
+
+  useEffect(() => {
+    if (autoQuantityTotal && formData.totalAmount !== autoQuantityTotal) {
+      setFormData((prev) => ({ ...prev, totalAmount: autoQuantityTotal }));
+    }
+  }, [autoQuantityTotal, formData.totalAmount]);
+
+  useEffect(() => {
+    if (!isPaidAutoSync) return;
+
+    const targetPaid = effectiveTotalAmount ? String(effectiveTotalAmount) : '';
+    if (formData.paidAmount !== targetPaid) {
+      setFormData((prev) => ({ ...prev, paidAmount: targetPaid }));
+    }
+  }, [effectiveTotalAmount, isPaidAutoSync, formData.paidAmount]);
 
   // Clear all filters
   const clearFilters = () => {
@@ -206,65 +344,26 @@ const ExpenseEntry = () => {
   const handleChange = (e) => {
     const { name, value } = e.target;
     
-    // Track if user manually edits paid amount
+    // Track manual edits to avoid overriding active typing.
     if (name === 'paidAmount') {
-      setPaidAmountManuallyEdited(true);
+      setIsPaidAutoSync(false);
     }
-    
-    setFormData(prev => {
-      const updated = {
-        ...prev,
-        [name]: value,
-        ...(name === 'category' && { subCategory: '' })
-      };
-      
-      // Auto-calculate total amount when quantity or rate changes
-      if (name === 'quantity' || name === 'rate') {
-        const quantity = parseFloat(name === 'quantity' ? value : updated.quantity) || 0;
-        const rate = parseFloat(name === 'rate' ? value : updated.rate) || 0;
-        if (quantity > 0 && rate > 0) {
-          const calculatedTotal = quantity * rate;
-          updated.totalAmount = calculatedTotal.toFixed(2);
-          // Also update paid amount to match (user can change it later)
-          if (!paidAmountManuallyEdited) {
-            updated.paidAmount = calculatedTotal.toFixed(2);
-          }
-        }
-      }
-      
-      // Auto-fill paid amount when total amount changes (UNLESS user manually edited paid)
-      if (name === 'totalAmount' && !paidAmountManuallyEdited) {
-        updated.paidAmount = value;
-      }
-      
-      // Auto-calculate remaining amount and payment status
-      const total = parseFloat(updated.totalAmount) || 0;
-      const paid = parseFloat(updated.paidAmount) || 0;
-      const remaining = total - paid;
-      updated.remainingAmount = remaining > 0.001 ? remaining.toFixed(2) : '0';
-      
-      // Auto-calculate payment status
-      if (paid >= total && total > 0) {
-        updated.paymentStatus = 'Clear';
-      } else if (paid > 0 && paid < total) {
-        updated.paymentStatus = 'Partial';
-      } else if (paid === 0 || total === 0) {
-        updated.paymentStatus = 'Pending';
-      }
-      
-      return updated;
-    });
+    setFormData(prev => ({
+      ...prev,
+      [name]: value,
+      ...(name === 'category' && { subCategory: '' })
+    }));
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     
-    if (!formData.date || !formData.category || !formData.totalAmount) {
+    if (!formData.date || !formData.category || !effectiveTotalAmount) {
       setSnackbar({ open: true, message: 'Please fill Date, Category, and Amount', severity: 'error' });
       return;
     }
 
-    if (parseFloat(formData.totalAmount) <= 0) {
+    if (parseFloat(effectiveTotalAmount) <= 0) {
       setSnackbar({ open: true, message: 'Amount must be greater than 0', severity: 'error' });
       return;
     }
@@ -285,7 +384,16 @@ const ExpenseEntry = () => {
           return;
         }
         
-        await updateExpense(editingId, formData);
+        await ensureVendorExists(formData.vendor);
+        await updateExpense(editingId, {
+          ...formData,
+          totalAmount: effectiveTotalAmount,
+          remainingAmount: computedPayment.remainingDisplay,
+          paymentStatus: computedPayment.status,
+          notesHtml: sanitizeRichText(formData.notesHtml || formData.notes || ''),
+          notes: richTextToPlainText(formData.notesHtml || formData.notes || ''),
+          description: '',
+        });
         setSnackbar({ open: true, message: '✓ Expense updated!', severity: 'success' });
         setEditingId(null);
       } catch (error) {
@@ -331,7 +439,16 @@ const ExpenseEntry = () => {
       }
     } else {
       try {
-        await addExpense(formData);
+        await ensureVendorExists(formData.vendor);
+        await addExpense({
+          ...formData,
+          totalAmount: effectiveTotalAmount,
+          remainingAmount: computedPayment.remainingDisplay,
+          paymentStatus: computedPayment.status,
+          notesHtml: sanitizeRichText(formData.notesHtml || formData.notes || ''),
+          notes: richTextToPlainText(formData.notesHtml || formData.notes || ''),
+          description: '',
+        });
         setSnackbar({ open: true, message: '✓ Expense added!', severity: 'success' });
       } catch (error) {
         console.error('❌ Error adding expense:', error);
@@ -350,19 +467,23 @@ const ExpenseEntry = () => {
       category: '',
       subCategory: '',
       vendor: '',
-      description: '',
       totalAmount: '',
       paidAmount: '',
       remainingAmount: '',
       paymentMethod: '',
-      area: '',
+      area: defaultArea,
       paymentStatus: 'Pending',
       notes: '',
+      notesHtml: '',
+      imageData: '',
+      imageName: '',
+      imageMimeType: '',
+      imageSizeKb: 0,
       quantity: '',
       unit: '',
       rate: '',
     });
-    setPaidAmountManuallyEdited(false);
+    setIsPaidAutoSync(true);
     setShowForm(false);
     setQuickAddMode(false);
   };
@@ -415,19 +536,26 @@ const ExpenseEntry = () => {
       category: expense.category,
       subCategory: expense.subCategory || '',
       vendor: expense.vendor || '',
-      description: expense.description || '',
       totalAmount: expense.totalAmount || expense.amount || '',
       paidAmount: expense.paidAmount || expense.totalAmount || expense.amount || '',
       remainingAmount: remainingAmt > 0.001 ? remainingAmt.toFixed(2) : '0',
       paymentMethod: expense.paymentMethod || '',
-      area: expense.area || '',
+      area: expense.area || defaultArea,
       paymentStatus: calculatedStatus,
-      notes: expense.notes || '',
+      notes: expense.notes || expense.description || '',
+      notesHtml: sanitizeRichText(expense.notesHtml || expense.notes || expense.description || ''),
+      imageData: expense.imageData || '',
+      imageName: expense.imageName || '',
+      imageMimeType: expense.imageMimeType || '',
+      imageSizeKb: expense.imageSizeKb || 0,
       quantity: expense.quantity || '',
       unit: expense.unit || '',
       rate: expense.rate || '',
     });
-    setPaidAmountManuallyEdited(true); // Treat existing data as manually set
+    const existingTotal = parseNumber(expense.totalAmount || expense.amount);
+    const existingPaid = parseNumber(expense.paidAmount || expense.totalAmount || expense.amount);
+    const isFullyPaid = Math.abs(existingTotal - existingPaid) < 0.001;
+    setIsPaidAutoSync(isFullyPaid);
     setEditingId(expense.id);
     setShowForm(true);
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -435,6 +563,11 @@ const ExpenseEntry = () => {
 
   const handleDelete = (id) => {
     setDeleteConfirm({ open: true, id });
+  };
+
+  const handleOpenImagePreview = (imageSrc, imageName = 'Expense image') => {
+    if (!imageSrc) return;
+    setImagePreview({ open: true, src: imageSrc, name: imageName });
   };
 
   const confirmDelete = () => {
@@ -449,20 +582,24 @@ const ExpenseEntry = () => {
     setEditingId(null);
     setShowForm(false);
     setQuickAddMode(false);
-    setPaidAmountManuallyEdited(false);
+    setIsPaidAutoSync(true);
     setFormData({
       date: new Date().toISOString().split('T')[0],
       category: '',
       subCategory: '',
       vendor: '',
-      description: '',
       totalAmount: '',
       paidAmount: '',
       remainingAmount: '',
       paymentMethod: '',
-      area: '',
+      area: defaultArea,
       paymentStatus: 'Pending',
       notes: '',
+      notesHtml: '',
+      imageData: '',
+      imageName: '',
+      imageMimeType: '',
+      imageSizeKb: 0,
       quantity: '',
       unit: '',
       rate: '',
@@ -554,30 +691,52 @@ const ExpenseEntry = () => {
               </Select>
             </FormControl>
 
-            {/* Sub-Category Dropdown */}
-            {formData.category && subCategories.length > 0 && (
-              <FormControl fullWidth>
-                <InputLabel id="form-subcategory-label">📋 Sub-Category</InputLabel>
-                <Select
-                  labelId="form-subcategory-label"
-                  id="form-subcategory"
-                  name="subCategory"
+            {/* Sub-Category */}
+            {formData.category && (
+              isMaterialCategory ? (
+                <Autocomplete
+                  freeSolo
+                  fullWidth
+                  options={subCategories}
                   value={formData.subCategory}
-                  onChange={handleChange}
-                  label="📋 Sub-Category"
-                  sx={{
-                    fontSize: { xs: '1.1rem', sm: '1rem' },
-                    height: { xs: '56px', sm: '56px' }
+                  onInputChange={(event, newValue) => {
+                    setFormData((prev) => ({ ...prev, subCategory: newValue || '' }));
                   }}
-                >
-                  <MenuItem value="">Select Sub-Category (Optional)</MenuItem>
-                  {subCategories.map((sub) => (
-                    <MenuItem key={sub} value={sub}>
-                      {sub}
-                    </MenuItem>
-                  ))}
-                </Select>
-              </FormControl>
+                  renderInput={(params) => (
+                    <TextField
+                      {...params}
+                      label="📋 Material (type to filter)"
+                      placeholder="Type material name..."
+                      helperText="Only enabled materials are suggested"
+                    />
+                  )}
+                />
+              ) : (
+                subCategories.length > 0 && (
+                  <FormControl fullWidth>
+                    <InputLabel id="form-subcategory-label">📋 Sub-Category</InputLabel>
+                    <Select
+                      labelId="form-subcategory-label"
+                      id="form-subcategory"
+                      name="subCategory"
+                      value={formData.subCategory}
+                      onChange={handleChange}
+                      label="📋 Sub-Category"
+                      sx={{
+                        fontSize: { xs: '1.1rem', sm: '1rem' },
+                        height: { xs: '56px', sm: '56px' }
+                      }}
+                    >
+                      <MenuItem value="">Select Sub-Category (Optional)</MenuItem>
+                      {subCategories.map((sub) => (
+                        <MenuItem key={sub} value={sub}>
+                          {sub}
+                        </MenuItem>
+                      ))}
+                    </Select>
+                  </FormControl>
+                )
+              )
             )}
 
             {/* Total Amount - ALWAYS visible (required field) */}
@@ -587,8 +746,10 @@ const ExpenseEntry = () => {
               label="💰 Total Amount"
               name="totalAmount"
               type="number"
-              value={formData.totalAmount}
+              value={effectiveTotalAmount}
               onChange={handleChange}
+              disabled={Boolean(autoQuantityTotal)}
+              helperText={autoQuantityTotal ? 'Auto-calculated from Quantity x Rate' : ''}
               inputProps={{ min: 0, step: 0.01 }}
               placeholder="0.00"
               sx={{
@@ -610,7 +771,7 @@ const ExpenseEntry = () => {
             />
 
             {/* Quantity, Unit & Rate - ALWAYS visible (helpful for materials like cement, bricks) */}
-            <Box sx={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1.5fr', gap: 2 }}>
+            <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '2fr 1fr 1.5fr' }, gap: 2 }}>
               <TextField
                 fullWidth
                 label="📦 Quantity"
@@ -650,7 +811,7 @@ const ExpenseEntry = () => {
                 onChange={handleChange}
                 inputProps={{ min: 0, step: 0.01 }}
                 placeholder="e.g., 12.5"
-                helperText={formData.quantity && formData.rate ? `Total: ${(parseFloat(formData.quantity) * parseFloat(formData.rate)).toFixed(2)}` : ''}
+                helperText={autoQuantityTotal ? `Qty x Rate = ${autoQuantityTotal}` : ''}
                 sx={{
                   '& .MuiInputBase-root': {
                     fontSize: { xs: '1rem', sm: '1rem' },
@@ -667,22 +828,30 @@ const ExpenseEntry = () => {
             <Autocomplete
               fullWidth
               freeSolo
-              options={vendors.map(v => v.name)}
+              options={[...new Set(vendors.map(v => v.name))]}
               value={formData.vendor}
               onInputChange={(event, newValue) => {
                 setFormData(prev => ({ ...prev, vendor: newValue || '' }));
               }}
+              onBlur={async () => {
+                try {
+                  await ensureVendorExists(formData.vendor);
+                } catch (error) {
+                  setSnackbar({ open: true, message: 'Could not add vendor', severity: 'warning' });
+                }
+              }}
               onChange={async (event, newValue) => {
-                if (newValue && !vendors.find(v => v.name === newValue)) {
+                const typedVendor = typeof newValue === 'string' ? newValue : (newValue || '');
+                if (typedVendor && !vendors.find(v => normalizeVendorName(v.name) === normalizeVendorName(typedVendor))) {
                   // Add new vendor if it doesn't exist
                   try {
-                    await addVendor({ name: newValue });
-                    setSnackbar({ open: true, message: `✓ Vendor "${newValue}" added!`, severity: 'success' });
+                    await addVendor({ name: typedVendor.trim() });
+                    setSnackbar({ open: true, message: `✓ Vendor "${typedVendor}" added!`, severity: 'success' });
                   } catch (error) {
                     console.error('Error adding vendor:', error);
                   }
                 }
-                setFormData(prev => ({ ...prev, vendor: newValue || '' }));
+                setFormData(prev => ({ ...prev, vendor: typedVendor }));
               }}
               renderInput={(params) => (
                 <TextField
@@ -702,27 +871,6 @@ const ExpenseEntry = () => {
               )}
             />
 
-            {/* Description Field */}
-            <TextField
-              fullWidth
-              label="📝 Description"
-              name="description"
-              value={formData.description}
-              onChange={handleChange}
-              multiline
-              rows={2}
-              placeholder="Brief description..."
-              sx={{
-                '& .MuiInputBase-root': {
-                  fontSize: { xs: '1rem', sm: '1rem' },
-                },
-                '& .MuiInputLabel-root': {
-                  fontSize: { xs: '1rem', sm: '1rem' },
-                  fontWeight: 500
-                }
-              }}
-            />
-
             {/* Paid Amount */}
             <TextField
               fullWidth
@@ -731,6 +879,7 @@ const ExpenseEntry = () => {
               type="number"
               value={formData.paidAmount}
               onChange={handleChange}
+              helperText={isPaidAutoSync ? 'Auto-synced with Total Amount. Edit to switch to manual payment.' : 'Manual mode enabled.'}
               inputProps={{ min: 0, step: 0.01 }}
               placeholder="0.00"
               sx={{
@@ -747,7 +896,7 @@ const ExpenseEntry = () => {
               label="⏳ Remaining Amount (Auto-calculated)"
               name="remainingAmount"
               type="number"
-              value={formData.remainingAmount}
+              value={computedPayment.remainingDisplay}
               InputProps={{ readOnly: true }}
               inputProps={{ min: 0, step: 0.01 }}
               placeholder="0.00"
@@ -800,15 +949,30 @@ const ExpenseEntry = () => {
                 }}
               >
                 <MenuItem value="">Select Area/Floor</MenuItem>
-                <MenuItem value="Foundation">🏗️ Foundation</MenuItem>
-                <MenuItem value="Ground Floor">🏠 Ground Floor</MenuItem>
-                <MenuItem value="First Floor">1️⃣ First Floor</MenuItem>
-                <MenuItem value="Second Floor">2️⃣ Second Floor</MenuItem>
-                <MenuItem value="Third Floor">3️⃣ Third Floor</MenuItem>
-                <MenuItem value="Roof/Top">🔝 Roof/Top</MenuItem>
-                <MenuItem value="General">📦 General</MenuItem>
+                {AREA_OPTIONS.map((area) => (
+                  <MenuItem key={area} value={area}>
+                    {area === defaultArea ? '⭐ ' : ''}{area}
+                  </MenuItem>
+                ))}
               </Select>
+              <FormHelperText>
+                Default area: {defaultArea}
+              </FormHelperText>
             </FormControl>
+
+            <Button
+              variant="outlined"
+              size="small"
+              startIcon={<StarIcon />}
+              disabled={!formData.area}
+              onClick={() => {
+                persistDefaultArea(formData.area);
+                setSnackbar({ open: true, message: `✓ "${formData.area}" set as default area`, severity: 'success' });
+              }}
+              sx={{ alignSelf: 'flex-start', textTransform: 'none' }}
+            >
+              Set Selected Area as Default
+            </Button>
 
             {/* Payment Status (Auto-calculated) */}
             <FormControl fullWidth>
@@ -817,8 +981,8 @@ const ExpenseEntry = () => {
                 labelId="form-payment-status-label"
                 id="form-payment-status"
                 name="paymentStatus"
-                value={formData.paymentStatus}
-                onChange={handleChange}
+                value={computedPayment.status}
+                disabled
                 label="✅ Payment Status (Auto-set)"
                 sx={{
                   fontSize: { xs: '1.1rem', sm: '1rem' },
@@ -832,22 +996,63 @@ const ExpenseEntry = () => {
               </Select>
             </FormControl>
 
-            {/* Notes */}
-            <TextField
-              fullWidth
-              label="📝 Notes"
-              name="notes"
-              value={formData.notes}
-              onChange={handleChange}
-              multiline
-              rows={2}
-              placeholder="Additional notes..."
-              sx={{
-                '& .MuiInputBase-root': {
-                  fontSize: { xs: '1rem', sm: '1rem' },
-                }
-              }}
-            />
+            {/* Notes (Rich Text) */}
+            <Box>
+              <Typography variant="subtitle2" sx={{ mb: 1 }}>
+                📝 Notes
+              </Typography>
+              <BasicRichTextEditor
+                value={formData.notesHtml || formData.notes || ''}
+                onChange={(newValue) => {
+                  setFormData((prev) => ({
+                    ...prev,
+                    notesHtml: newValue,
+                    notes: richTextToPlainText(newValue),
+                  }));
+                }}
+                placeholder="Add formatted notes for this expense..."
+              />
+            </Box>
+
+            {/* Image Attachment */}
+            <Box>
+              <Button
+                component="label"
+                variant="outlined"
+                startIcon={<ImageIcon />}
+                sx={{ textTransform: 'none' }}
+              >
+                Attach Expense Image
+                <input hidden accept="image/*" type="file" onChange={handleImageSelection} />
+              </Button>
+
+              {formData.imageData && (
+                <Box sx={{ mt: 1.5, display: 'flex', gap: 1.5, alignItems: 'center' }}>
+                  <Avatar
+                    variant="rounded"
+                    src={formData.imageData}
+                    alt={formData.imageName || 'expense image'}
+                    sx={{ width: { xs: 60, sm: 72 }, height: { xs: 60, sm: 72 }, border: '0.5px solid', borderColor: 'rgba(0,0,0,0.12)' }}
+                  />
+                  <Box>
+                    <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+                      {formData.imageName || 'Attached image'}
+                    </Typography>
+                    <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+                      {formData.imageSizeKb || 0} KB (compressed)
+                    </Typography>
+                    <Button
+                      size="small"
+                      color="error"
+                      onClick={() => setFormData((prev) => ({ ...prev, imageData: '', imageName: '', imageMimeType: '', imageSizeKb: 0 }))}
+                      sx={{ px: 0, minWidth: 'auto', textTransform: 'none' }}
+                    >
+                      Remove image
+                    </Button>
+                  </Box>
+                </Box>
+              )}
+            </Box>
             </>
             )}
 
@@ -928,7 +1133,7 @@ const ExpenseEntry = () => {
               name="searchText"
               value={filters.searchText}
               onChange={handleFilterChange}
-              placeholder="Search description, vendor, category..."
+              placeholder="Search notes, vendor, category..."
               sx={{ gridColumn: { xs: '1', md: 'span 1' } }}
               InputProps={{
                 startAdornment: (
@@ -987,13 +1192,9 @@ const ExpenseEntry = () => {
                 label="Area/Floor"
               >
                 <MenuItem value="">All Areas</MenuItem>
-                <MenuItem value="Foundation">🏗️ Foundation</MenuItem>
-                <MenuItem value="Ground Floor">🏠 Ground Floor</MenuItem>
-                <MenuItem value="First Floor">1️⃣ First Floor</MenuItem>
-                <MenuItem value="Second Floor">2️⃣ Second Floor</MenuItem>
-                <MenuItem value="Third Floor">3️⃣ Third Floor</MenuItem>
-                <MenuItem value="Roof/Top">🔝 Roof/Top</MenuItem>
-                <MenuItem value="General">📦 General</MenuItem>
+                {AREA_OPTIONS.map((area) => (
+                  <MenuItem key={area} value={area}>{area === defaultArea ? '⭐ ' : ''}{area}</MenuItem>
+                ))}
               </Select>
             </FormControl>
           </Box>
@@ -1254,10 +1455,39 @@ const ExpenseEntry = () => {
                           🏪 <strong>Vendor:</strong> {expense.vendor}
                         </Typography>
                       )}
-                      {(expense.description || expense.notes) && (
-                        <Typography variant="body2" color="text.secondary" sx={{ fontSize: '0.8rem', fontStyle: 'italic' }}>
-                          💬 {expense.description || expense.notes}
-                        </Typography>
+                      {(expense.notesHtml || expense.notes || expense.description) && (
+                        <Box sx={{ mt: 0.5 }}>
+                          <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.25 }}>
+                            💬 Notes
+                          </Typography>
+                          <Box
+                            sx={{
+                              fontSize: '0.8rem',
+                              color: 'text.secondary',
+                              '& p, & div': { m: 0 },
+                              '& ul, & ol': { mt: 0.25, mb: 0.25, pl: 2 },
+                            }}
+                            dangerouslySetInnerHTML={{
+                              __html: sanitizeRichText(expense.notesHtml || expense.notes || expense.description || ''),
+                            }}
+                          />
+                        </Box>
+                      )}
+                      {expense.imageData && (
+                        <Box sx={{ mt: 0.75 }}>
+                          <Button
+                            variant="text"
+                            onClick={() => handleOpenImagePreview(expense.imageData, expense.imageName || 'Expense image')}
+                            sx={{ p: 0, minWidth: 'auto', textTransform: 'none' }}
+                          >
+                            <Avatar
+                              variant="rounded"
+                              src={expense.imageData}
+                              alt={expense.imageName || 'expense attachment'}
+                              sx={{ width: { xs: 52, sm: 64 }, height: { xs: 52, sm: 64 }, border: '0.5px solid', borderColor: 'rgba(0,0,0,0.12)' }}
+                            />
+                          </Button>
+                        </Box>
                       )}
                     </Stack>
                   </CardContent>
@@ -1337,7 +1567,8 @@ const ExpenseEntry = () => {
                   <TableCell sx={{ fontWeight: 'bold', bgcolor: 'grey.100', fontSize: '0.875rem', py: 2 }}>Paid</TableCell>
                   <TableCell sx={{ fontWeight: 'bold', bgcolor: 'grey.100', fontSize: '0.875rem', py: 2 }}>Remaining</TableCell>
                   <TableCell sx={{ fontWeight: 'bold', bgcolor: 'grey.100', fontSize: '0.875rem', py: 2 }}>Area</TableCell>
-                  <TableCell sx={{ fontWeight: 'bold', bgcolor: 'grey.100', fontSize: '0.875rem', py: 2 }}>Description</TableCell>
+                  <TableCell sx={{ fontWeight: 'bold', bgcolor: 'grey.100', fontSize: '0.875rem', py: 2 }}>Notes</TableCell>
+                  <TableCell sx={{ fontWeight: 'bold', bgcolor: 'grey.100', fontSize: '0.875rem', py: 2 }}>Image</TableCell>
                   <TableCell align="center" sx={{ fontWeight: 'bold', bgcolor: 'grey.100', fontSize: '0.875rem', py: 2 }}>Actions</TableCell>
                 </TableRow>
               </TableHead>
@@ -1406,7 +1637,23 @@ const ExpenseEntry = () => {
                         {expense.area || '-'}
                       </TableCell>
                       <TableCell sx={{ fontSize: '0.8rem', maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', py: 2 }}>
-                        {expense.description || expense.notes || '-'}
+                        {richTextToPlainText(expense.notesHtml || expense.notes || expense.description) || '-'}
+                      </TableCell>
+                      <TableCell sx={{ py: 2 }}>
+                        {expense.imageData ? (
+                          <Button
+                            variant="text"
+                            onClick={() => handleOpenImagePreview(expense.imageData, expense.imageName || 'Expense image')}
+                            sx={{ p: 0, minWidth: 'auto', textTransform: 'none' }}
+                          >
+                            <Avatar
+                              variant="rounded"
+                              src={expense.imageData}
+                              alt={expense.imageName || 'expense attachment'}
+                              sx={{ width: 38, height: 38 }}
+                            />
+                          </Button>
+                        ) : '-'}
                       </TableCell>
                       <TableCell sx={{ textAlign: 'center', py: 2 }}>
                         <IconButton size="small" color="primary" onClick={() => handleEdit(expense)}>
@@ -1533,6 +1780,62 @@ const ExpenseEntry = () => {
             }}
           >
             Delete
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Image Preview Dialog */}
+      <Dialog
+        open={imagePreview.open}
+        onClose={() => setImagePreview({ open: false, src: '', name: '' })}
+        maxWidth={isMobile ? 'sm' : 'md'}
+        fullWidth
+        PaperProps={{
+          sx: {
+            m: { xs: 1.5, sm: 3 },
+            width: { xs: 'calc(100% - 24px)', sm: 'auto' },
+            maxHeight: { xs: '86vh', sm: '90vh' },
+            borderRadius: { xs: 2, sm: 3 },
+          }
+        }}
+      >
+        <DialogTitle sx={{ pb: 1 }}>
+          <Typography variant="h6" fontWeight="bold">
+            {imagePreview.name || 'Expense Image'}
+          </Typography>
+        </DialogTitle>
+        <DialogContent>
+          <Box
+            sx={{
+              display: 'flex',
+              justifyContent: 'center',
+              alignItems: 'center',
+              minHeight: { xs: 170, sm: 320 },
+              bgcolor: 'grey.50',
+              borderRadius: 1.5,
+              border: '0.5px solid',
+              borderColor: 'rgba(0,0,0,0.12)',
+              p: { xs: 0.75, sm: 1 },
+            }}
+          >
+            {imagePreview.src && (
+              <Box
+                component="img"
+                src={imagePreview.src}
+                alt={imagePreview.name || 'Expense image'}
+                sx={{
+                  maxWidth: '100%',
+                  maxHeight: { xs: 300, sm: 520 },
+                  objectFit: 'contain',
+                  borderRadius: 1,
+                }}
+              />
+            )}
+          </Box>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setImagePreview({ open: false, src: '', name: '' })}>
+            Close
           </Button>
         </DialogActions>
       </Dialog>

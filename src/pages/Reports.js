@@ -97,7 +97,7 @@ const Reports = () => {
     }
   };
 
-  const totalExpenses = expenses.reduce((sum, exp) => sum + parseFloat(exp.amount || 0), 0);
+  const totalExpenses = expenses.reduce((sum, exp) => sum + (parseFloat(exp.totalAmount || exp.amount) || 0), 0);
 
   return (
     <Container 

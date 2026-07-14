@@ -14,8 +14,6 @@ import {
   InputLabel,
 } from '@mui/material';
 import {
-  PieChart,
-  Pie,
   Cell,
   BarChart,
   Bar,
@@ -27,6 +25,7 @@ import {
   ResponsiveContainer,
   AreaChart,
   Area,
+  LabelList,
 } from 'recharts';
 import { useExpense } from '../contexts/ExpenseContext';
 import TrendingUpIcon from '@mui/icons-material/TrendingUp';
@@ -130,9 +129,20 @@ const Dashboard = () => {
       materialBreakdown[subCat] = (materialBreakdown[subCat] || 0) + getAmount(exp);
     });
   
-  const materialData = Object.entries(materialBreakdown)
+  const materialDataRaw = Object.entries(materialBreakdown)
     .map(([name, value]) => ({ name, value }))
     .sort((a, b) => b.value - a.value);
+
+  const totalMaterialForShare = materialDataRaw.reduce((sum, item) => sum + item.value, 0);
+  const topMaterialData = materialDataRaw.slice(0, 8);
+  const otherMaterialValue = materialDataRaw.slice(8).reduce((sum, item) => sum + item.value, 0);
+  const materialData = [
+    ...topMaterialData,
+    ...(otherMaterialValue > 0 ? [{ name: 'Others', value: otherMaterialValue }] : []),
+  ].map((item) => ({
+    ...item,
+    share: totalMaterialForShare > 0 ? (item.value / totalMaterialForShare) * 100 : 0,
+  }));
 
   // Monthly Paid Amount Breakdown
   const monthlyPaidData = {};
@@ -142,7 +152,7 @@ const Dashboard = () => {
     const monthLabel = date.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
     
     if (!monthlyPaidData[monthKey]) {
-      monthlyPaidData[monthKey] = { month: monthLabel, paid: 0, total: 0, remaining: 0 };
+      monthlyPaidData[monthKey] = { monthKey, month: monthLabel, paid: 0, total: 0, remaining: 0 };
     }
     const paidAmt = getPaidAmount(exp);
     const totalAmt = getAmount(exp);
@@ -152,7 +162,7 @@ const Dashboard = () => {
   });
   
   const monthlyData = Object.values(monthlyPaidData)
-    .sort((a, b) => a.month.localeCompare(b.month))
+    .sort((a, b) => a.monthKey.localeCompare(b.monthKey))
     .slice(-6); // Last 6 months
 
   // Expense Trend Over Time (Cumulative)
@@ -471,32 +481,35 @@ const Dashboard = () => {
                 🧱 Material Cost Breakdown
               </Typography>
               <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                Distribution by material type (cement, bricks, etc.)
+                Top material spend with percentage share and grouped Others
               </Typography>
               
               <ResponsiveContainer width="100%" height={isMobile ? 280 : 350}>
-                <PieChart>
-                  <Pie
+                <BarChart
                     data={materialData}
-                    cx="50%"
-                    cy="50%"
-                    labelLine={true}
-                    label={({ name, percent }) => 
-                      isMobile ? `${(percent * 100).toFixed(0)}%` : `${name}: ${(percent * 100).toFixed(1)}%`
-                    }
-                    outerRadius={isMobile ? 80 : 110}
-                    fill="#8884d8"
-                    dataKey="value"
-                  >
-                    {materialData.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={MATERIAL_COLORS[index % MATERIAL_COLORS.length]} />
-                    ))}
-                  </Pie>
+                  layout="vertical"
+                  margin={{ top: 8, right: 24, left: 12, bottom: 8 }}
+                >
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis type="number" tickFormatter={(value) => `${Math.round(value / 1000)}k`} tick={{ fontSize: isMobile ? 9 : 11 }} />
+                  <YAxis type="category" dataKey="name" width={isMobile ? 80 : 110} tick={{ fontSize: isMobile ? 10 : 12 }} />
                   <Tooltip 
-                    formatter={(value) => `${value.toLocaleString()} PKR`}
+                    formatter={(value, key, payload) => {
+                      if (key === 'value') {
+                        return [`${Number(value).toLocaleString()} PKR`, 'Amount'];
+                      }
+                      return [`${payload?.payload?.share?.toFixed(1)}%`, 'Share'];
+                    }}
                     contentStyle={{ fontSize: isMobile ? '0.85rem' : '1rem' }}
                   />
-                </PieChart>
+                  <Legend formatter={(value) => value === 'value' ? 'Amount' : 'Share %'} />
+                  <Bar dataKey="value" name="value" radius={[0, 8, 8, 0]}>
+                    {materialData.map((entry, index) => (
+                      <Cell key={`cell-${entry.name}`} fill={MATERIAL_COLORS[index % MATERIAL_COLORS.length]} />
+                    ))}
+                    <LabelList dataKey="share" position="right" formatter={(value) => `${Number(value).toFixed(1)}%`} />
+                  </Bar>
+                </BarChart>
               </ResponsiveContainer>
             </Paper>
           </Grid>

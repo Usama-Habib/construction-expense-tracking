@@ -31,6 +31,36 @@ const DEFAULT_CATEGORIES = [
 
 const DEFAULT_PAYMENT_METHODS = ['Cash', 'Bank Transfer', 'Credit Card', 'Debit Card', 'Check', 'Online Payment'];
 
+const normalizeSubCategory = (subCategory) => {
+  if (typeof subCategory === 'string') {
+    return { name: subCategory, enabled: true };
+  }
+
+  if (subCategory && typeof subCategory === 'object') {
+    return {
+      name: String(subCategory.name || '').trim(),
+      enabled: subCategory.enabled !== false,
+    };
+  }
+
+  return { name: '', enabled: true };
+};
+
+const normalizeCategories = (categoryList = []) => {
+  return categoryList.map((category) => {
+    const normalizedSubCategories = Array.isArray(category.subCategories)
+      ? category.subCategories
+          .map(normalizeSubCategory)
+          .filter((sub) => sub.name)
+      : [];
+
+    return {
+      ...category,
+      subCategories: normalizedSubCategories,
+    };
+  });
+};
+
 // Cache configuration
 const CACHE_KEY = 'expense_cache';
 const CACHE_TIMESTAMP_KEY = 'expense_cache_timestamp';
@@ -107,7 +137,7 @@ export const ExpenseProvider = ({ children }) => {
         const cachedData = getCachedData();
         if (cachedData) {
           setExpenses(cachedData.expenses || []);
-          setCategories(cachedData.categories || DEFAULT_CATEGORIES);
+          setCategories(normalizeCategories(cachedData.categories || DEFAULT_CATEGORIES));
           // Normalize cached vendors to ensure consistent structure
           const normalizedVendors = (cachedData.vendors || []).map(v => ({
             id: v.id,
@@ -149,7 +179,7 @@ export const ExpenseProvider = ({ children }) => {
         id: doc.id,
         ...doc.data()
       }));
-      const finalCategories = categoriesData.length > 0 ? categoriesData : DEFAULT_CATEGORIES;
+      const finalCategories = normalizeCategories(categoriesData.length > 0 ? categoriesData : DEFAULT_CATEGORIES);
       setCategories(finalCategories);
 
       // Load vendors
@@ -385,8 +415,14 @@ export const ExpenseProvider = ({ children }) => {
   // Category operations
   const addCategory = async (category) => {
     try {
-      const docRef = await addDoc(collection(db, 'categories'), category);
-      const newCategory = { id: docRef.id, ...category };
+      const normalizedCategory = {
+        ...category,
+        subCategories: (category.subCategories || [])
+          .map(normalizeSubCategory)
+          .filter((sub) => sub.name),
+      };
+      const docRef = await addDoc(collection(db, 'categories'), normalizedCategory);
+      const newCategory = { id: docRef.id, ...normalizedCategory };
       const updatedCategories = [...categories, newCategory];
       setCategories(updatedCategories);
       
@@ -400,8 +436,18 @@ export const ExpenseProvider = ({ children }) => {
 
   const updateCategory = async (id, updates) => {
     try {
-      await updateDoc(doc(db, 'categories', id), updates);
-      const updatedCategories = categories.map(cat => cat.id === id ? { ...cat, ...updates } : cat);
+      const normalizedUpdates = {
+        ...updates,
+        ...(updates.subCategories
+          ? {
+              subCategories: updates.subCategories
+                .map(normalizeSubCategory)
+                .filter((sub) => sub.name),
+            }
+          : {}),
+      };
+      await updateDoc(doc(db, 'categories', id), normalizedUpdates);
+      const updatedCategories = categories.map(cat => cat.id === id ? { ...cat, ...normalizedUpdates } : cat);
       setCategories(updatedCategories);
       
       // Update cache

@@ -18,6 +18,8 @@ import {
   DialogActions,
   Tab,
   Tabs,
+  Switch,
+  FormControlLabel,
 } from '@mui/material';
 import DeleteIcon from '@mui/icons-material/Delete';
 import EditIcon from '@mui/icons-material/Edit';
@@ -43,6 +45,16 @@ const Management = () => {
     email: '',
     notes: '',
   });
+
+  const getSubCategoryName = (subCategory) => {
+    if (typeof subCategory === 'string') return subCategory;
+    return subCategory?.name || '';
+  };
+
+  const isSubCategoryEnabled = (subCategory) => {
+    if (typeof subCategory === 'string') return true;
+    return subCategory?.enabled !== false;
+  };
 
   // Category Handlers
   const handleCategorySubmit = () => {
@@ -72,9 +84,29 @@ const Management = () => {
       name: category.name,
       icon: category.icon,
       color: category.color,
-      subCategories: category.subCategories.join(', '),
+      subCategories: (category.subCategories || []).map(getSubCategoryName).join(', '),
     });
     setCategoryDialog({ open: true, editing: category.id });
+  };
+
+  const handleToggleMaterialSubCategory = (category, subIndex) => {
+    const updatedSubCategories = (category.subCategories || []).map((sub, index) => {
+      if (index !== subIndex) {
+        if (typeof sub === 'string') return { name: sub, enabled: true };
+        return sub;
+      }
+
+      if (typeof sub === 'string') {
+        return { name: sub, enabled: false };
+      }
+
+      return { ...sub, enabled: !isSubCategoryEnabled(sub) };
+    });
+
+    updateCategory(category.id, {
+      ...category,
+      subCategories: updatedSubCategories,
+    });
   };
 
   const handleCategoryDelete = (id) => {
@@ -154,11 +186,13 @@ const Management = () => {
                           {category.icon} {category.name}
                         </Typography>
                         <Box sx={{ mt: 1 }}>
-                          {category.subCategories.map((sub) => (
+                          {(category.subCategories || []).map((sub) => (
                             <Chip
-                              key={sub}
-                              label={sub}
+                              key={getSubCategoryName(sub)}
+                              label={getSubCategoryName(sub)}
                               size="small"
+                              color={isSubCategoryEnabled(sub) ? 'default' : 'warning'}
+                              variant={isSubCategoryEnabled(sub) ? 'filled' : 'outlined'}
                               sx={{ mr: 0.5, mb: 0.5 }}
                             />
                           ))}
@@ -173,6 +207,28 @@ const Management = () => {
                         </IconButton>
                       </Box>
                     </Box>
+
+                    {category.name === 'Material' && (
+                      <Box sx={{ mt: 2, pt: 1.5, borderTop: '1px solid', borderColor: 'divider' }}>
+                        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1 }}>
+                          Toggle material sub-categories in the expense form
+                        </Typography>
+                        {(category.subCategories || []).map((sub, subIndex) => (
+                          <FormControlLabel
+                            key={`${category.id}-${getSubCategoryName(sub)}`}
+                            control={
+                              <Switch
+                                size="small"
+                                checked={isSubCategoryEnabled(sub)}
+                                onChange={() => handleToggleMaterialSubCategory(category, subIndex)}
+                              />
+                            }
+                            label={getSubCategoryName(sub)}
+                            sx={{ display: 'flex', width: '100%', m: 0 }}
+                          />
+                        ))}
+                      </Box>
+                    )}
                   </Paper>
                 </Grid>
               ))}
