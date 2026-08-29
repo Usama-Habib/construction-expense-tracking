@@ -12,6 +12,7 @@ import Reports from './pages/Reports';
 import ProjectConfig from './pages/ProjectConfig';
 import CostDashboard from './pages/CostDashboard';
 import PaymentTracker from './pages/PaymentTracker';
+import VendorPayables from './pages/VendorPayables';
 
 const theme = createTheme({
   palette: {
@@ -73,6 +74,7 @@ function AppContent() {
           <Route path="/project-config" element={<ProjectConfig />} />
           <Route path="/cost-dashboard" element={<CostDashboard />} />
           <Route path="/payment-tracker" element={<PaymentTracker />} />
+          <Route path="/vendor-payables" element={<VendorPayables />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </Layout>

@@ -168,7 +168,7 @@ const Reports = () => {
           >
             <CardContent sx={{ textAlign: 'center', p: { xs: 2, sm: 3 } }}>
               <Typography variant="h3" color="white" fontWeight="bold" sx={{ fontSize: { xs: '1.5rem', sm: '2.5rem' } }}>
-                ${totalExpenses.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                {totalExpenses.toLocaleString(undefined, { maximumFractionDigits: 0 })}
               </Typography>
               <Typography color="white" variant="body2" sx={{ fontSize: { xs: '0.75rem', sm: '0.875rem' } }}>
                 Total Amount

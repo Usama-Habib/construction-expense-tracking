@@ -30,6 +30,7 @@ import BuildIcon from '@mui/icons-material/Build';
 import TimelineIcon from '@mui/icons-material/Timeline';
 import PaymentIcon from '@mui/icons-material/Payment';
 import AccountBalanceIcon from '@mui/icons-material/AccountBalance';
+import RequestQuoteIcon from '@mui/icons-material/RequestQuote';
 import { useNavigate, useLocation } from 'react-router-dom';
 
 const drawerWidth = 240;
@@ -51,13 +52,14 @@ const Layout = ({ children }) => {
     { text: 'Project Setup', icon: <BuildIcon />, path: '/project-config' },
     { text: 'Cost Analysis', icon: <AccountBalanceIcon />, path: '/cost-dashboard' },
     { text: 'Payment Tracker', icon: <PaymentIcon />, path: '/payment-tracker' },
+    { text: 'Vendor Payables', icon: <RequestQuoteIcon />, path: '/vendor-payables' },
     { text: 'Reports', icon: <DescriptionIcon />, path: '/reports' },
     { text: 'Settings', icon: <SettingsIcon />, path: '/settings' },
   ];
 
-  // Bottom navigation items (exclude Reports and Settings for better mobile UX)
+  // Bottom navigation items (exclude Reports, Settings, and lower-priority pages for better mobile UX)
   const bottomNavItems = menuItems.filter(item => 
-    !['Reports', 'Settings'].includes(item.text)
+    !['Project Setup', 'Cost Analysis', 'Payment Tracker', 'Reports', 'Settings'].includes(item.text)
   );
 
   const handleDrawerToggle = () => {

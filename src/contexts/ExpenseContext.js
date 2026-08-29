@@ -121,6 +121,8 @@ export const ExpenseProvider = ({ children }) => {
   const [projectConfig, setProjectConfig] = useState(null);
   const [progressData, setProgressData] = useState(null);
   const [paymentStages, setPaymentStages] = useState(null);
+  // Audit trail of lump-sum vendor payments and how they were allocated across expenses
+  const [vendorPayments, setVendorPayments] = useState([]);
 
   // Load data from Firestore or cache
   const loadData = async (forceRefresh = false) => {
@@ -152,6 +154,7 @@ export const ExpenseProvider = ({ children }) => {
           setProjectConfig(cachedData.projectConfig || null);
           setProgressData(cachedData.progressData || null);
           setPaymentStages(cachedData.paymentStages || null);
+          setVendorPayments(cachedData.vendorPayments || []);
           setLastSync(new Date(parseInt(localStorage.getItem(CACHE_TIMESTAMP_KEY))));
           setLoading(false);
           return;
@@ -237,6 +240,11 @@ export const ExpenseProvider = ({ children }) => {
         setPaymentStages(finalPaymentStages.stages || finalPaymentStages);
       }
 
+      // Load vendor payment audit history
+      const vendorPaymentsSnapshot = await getDocs(collection(db, 'vendorPayments'));
+      const vendorPaymentsData = vendorPaymentsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      setVendorPayments(vendorPaymentsData);
+
       // Cache the loaded data
       setCachedData({
         expenses: expensesData,
@@ -246,7 +254,8 @@ export const ExpenseProvider = ({ children }) => {
         budget: finalBudget,
         projectConfig: finalProjectConfig,
         progressData: finalProgressData,
-        paymentStages: finalPaymentStages
+        paymentStages: finalPaymentStages,
+        vendorPayments: vendorPaymentsData
       });
       setLastSync(new Date());
       
@@ -533,6 +542,146 @@ export const ExpenseProvider = ({ children }) => {
     }
   };
 
+  // ==================== VENDOR PAYABLES ====================
+  // Vendor "payable" is derived entirely from existing expense-level totalAmount/paidAmount fields —
+  // no new balance is stored, it's always computed from the expenses that are currently in state.
+
+  // How much is currently owed to each vendor, aggregated across their expenses
+  const getVendorPayables = () => {
+    const map = {};
+    expenses.forEach((exp) => {
+      const vendor = exp.vendor || 'Unknown';
+      if (!map[vendor]) {
+        map[vendor] = { vendor, totalAmount: 0, totalPaid: 0, totalDue: 0, transactionCount: 0 };
+      }
+      map[vendor].totalAmount += getAmount(exp);
+      map[vendor].totalPaid += getPaidAmount(exp);
+      map[vendor].totalDue += getRemainingAmount(exp);
+      map[vendor].transactionCount += 1;
+    });
+    return Object.values(map)
+      .filter((v) => v.totalDue > 0.001)
+      .sort((a, b) => b.totalDue - a.totalDue);
+  };
+
+  // A vendor's unpaid/partially-paid expenses, oldest first (FIFO order)
+  const getVendorOutstandingExpenses = (vendorName) => {
+    return expenses
+      .filter((exp) => (exp.vendor || 'Unknown') === vendorName && getRemainingAmount(exp) > 0.001)
+      .map((exp) => ({ ...exp, dueAmount: getRemainingAmount(exp) }))
+      .sort((a, b) => new Date(a.date) - new Date(b.date));
+  };
+
+  // Every expense for a vendor regardless of payment status, newest first — the full transaction history
+  const getVendorExpenses = (vendorName) => {
+    return expenses
+      .filter((exp) => (exp.vendor || 'Unknown') === vendorName)
+      .map((exp) => ({
+        ...exp,
+        billedAmount: getAmount(exp),
+        paidAmountTotal: getPaidAmount(exp),
+        dueAmount: getRemainingAmount(exp),
+      }))
+      .sort((a, b) => new Date(b.date) - new Date(a.date));
+  };
+
+  // Propose how a lump-sum vendor payment should be spread across outstanding expenses.
+  // Defaults to FIFO (oldest debt first), matching how construction vendor accounts are usually settled;
+  // 'smallest-first' / 'largest-first' are offered as alternates the user can pick before confirming.
+  const previewPaymentAllocation = (vendorName, paymentAmount, strategy = 'fifo') => {
+    const outstanding = getVendorOutstandingExpenses(vendorName);
+    const ordered = [...outstanding];
+    if (strategy === 'smallest-first') {
+      ordered.sort((a, b) => a.dueAmount - b.dueAmount);
+    } else if (strategy === 'largest-first') {
+      ordered.sort((a, b) => b.dueAmount - a.dueAmount);
+    } // 'fifo' keeps the oldest-first order already applied above
+
+    let remaining = parseFloat(paymentAmount) || 0;
+    const allocations = [];
+    for (const exp of ordered) {
+      if (remaining <= 0.001) break;
+      const applyAmount = Math.min(exp.dueAmount, remaining);
+      if (applyAmount > 0.001) {
+        allocations.push({
+          expenseId: exp.id,
+          date: exp.date,
+          category: exp.category,
+          subCategory: exp.subCategory,
+          totalAmount: getAmount(exp),
+          previousDue: parseFloat(exp.dueAmount.toFixed(2)),
+          amountApplied: parseFloat(applyAmount.toFixed(2)),
+          newDue: parseFloat((exp.dueAmount - applyAmount).toFixed(2)),
+        });
+        remaining -= applyAmount;
+      }
+    }
+
+    const paymentTotal = parseFloat(paymentAmount) || 0;
+    return {
+      allocations,
+      totalAllocated: parseFloat((paymentTotal - remaining).toFixed(2)),
+      unallocatedAmount: parseFloat(remaining.toFixed(2)), // leftover if payment exceeds total due
+    };
+  };
+
+  // Apply a (possibly user-edited) allocation: updates each affected expense's paid/remaining/status,
+  // then records one audit entry for the overall vendor payment.
+  const applyVendorPayment = async (vendorName, allocations, meta = {}) => {
+    try {
+      const validAllocations = (allocations || []).filter((a) => parseFloat(a.amountApplied) > 0.001);
+
+      for (const alloc of validAllocations) {
+        const expense = expenses.find((e) => e.id === alloc.expenseId);
+        if (!expense) continue;
+
+        const total = getAmount(expense);
+        const newPaid = getPaidAmount(expense) + parseFloat(alloc.amountApplied);
+        const newRemaining = Math.max(0, total - newPaid);
+        const newStatus = newRemaining <= 0.001 ? 'Clear' : (newPaid > 0 ? 'Partial' : 'Pending');
+
+        await updateExpense(expense.id, {
+          paidAmount: newPaid.toFixed(2),
+          remainingAmount: newRemaining.toFixed(2),
+          paymentStatus: newStatus,
+        });
+      }
+
+      const totalApplied = validAllocations.reduce((sum, a) => sum + parseFloat(a.amountApplied), 0);
+      const paymentRecord = {
+        vendor: vendorName,
+        amount: parseFloat(totalApplied.toFixed(2)),
+        date: meta.date || new Date().toISOString().split('T')[0],
+        method: meta.method || '',
+        notes: meta.notes || '',
+        allocations: validAllocations.map((a) => ({
+          expenseId: a.expenseId,
+          amountApplied: parseFloat(a.amountApplied),
+        })),
+        createdAt: new Date().toISOString(),
+      };
+
+      const docRef = await addDoc(collection(db, 'vendorPayments'), paymentRecord);
+      const newRecord = { id: docRef.id, ...paymentRecord };
+      const updatedVendorPayments = [newRecord, ...vendorPayments];
+      setVendorPayments(updatedVendorPayments);
+
+      const cachedData = getCachedData() || {};
+      setCachedData({ ...cachedData, vendorPayments: updatedVendorPayments });
+
+      return newRecord;
+    } catch (error) {
+      console.error('❌ Error applying vendor payment:', error);
+      throw error;
+    }
+  };
+
+  const getVendorPaymentHistory = (vendorName) => {
+    return vendorPayments
+      .filter((p) => p.vendor === vendorName)
+      .sort((a, b) => new Date(b.date) - new Date(a.date));
+  };
+
   // Analytics functions (backward compatible with old 'amount' and new 'totalAmount')
   const getAmount = (exp) => parseFloat(exp.totalAmount || exp.amount) || 0;
   const getPaidAmount = (exp) => {
@@ -692,6 +841,7 @@ export const ExpenseProvider = ({ children }) => {
     projectConfig,
     progressData,
     paymentStages,
+    vendorPayments,
     
     // Expense operations
     addExpense,
@@ -712,6 +862,14 @@ export const ExpenseProvider = ({ children }) => {
     addVendor,
     updateVendor,
     deleteVendor,
+
+    // Vendor payables (aggregated outstanding balances) and payment allocation
+    getVendorPayables,
+    getVendorOutstandingExpenses,
+    getVendorExpenses,
+    previewPaymentAllocation,
+    applyVendorPayment,
+    getVendorPaymentHistory,
     
     // Payment methods
     setPaymentMethods,
@@ -725,6 +883,9 @@ export const ExpenseProvider = ({ children }) => {
     savePaymentStages,
     
     // Analytics
+    getAmount,
+    getPaidAmount,
+    getRemainingAmount,
     getTotalExpenses,
     getTotalPaid,
     getTotalRemaining,
