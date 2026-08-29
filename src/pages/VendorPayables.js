@@ -454,40 +454,86 @@ const VendorPayables = () => {
           {selectedVendor && getVendorExpenses(selectedVendor.vendor).length === 0 ? (
             <Alert severity="info">No transactions recorded for this vendor.</Alert>
           ) : isMobile ? (
-            <Stack spacing={1} sx={{ mb: 3, maxHeight: 300, overflowY: 'auto' }}>
-              {selectedVendor && getVendorExpenses(selectedVendor.vendor).map((exp) => (
-                <Card key={exp.id} variant="outlined">
-                  <CardContent sx={{ p: 1.5, '&:last-child': { pb: 1.5 } }}>
-                    <Stack direction="row" justifyContent="space-between" alignItems="flex-start" spacing={1}>
-                      <Typography variant="body2" sx={{ minWidth: 0 }}>{exp.date}</Typography>
-                      <Chip
-                        size="small"
-                        label={exp.paymentStatus || 'Pending'}
-                        color={exp.dueAmount <= 0.001 ? 'success' : (exp.paidAmountTotal > 0 ? 'warning' : 'default')}
-                        sx={{ flexShrink: 0 }}
-                      />
-                    </Stack>
-                    <Typography variant="caption" color="text.secondary" display="block" sx={{ wordBreak: 'break-word' }}>
-                      {exp.category}{exp.subCategory ? ` / ${exp.subCategory}` : ''}
-                    </Typography>
-                    <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 1, mt: 0.5 }}>
-                      <Box sx={{ minWidth: 0 }}>
-                        <Typography variant="caption" color="text.secondary" display="block">Billed</Typography>
-                        <Typography variant="body2" sx={{ wordBreak: 'break-word' }}>{formatCurrency(exp.billedAmount)}</Typography>
-                      </Box>
-                      <Box sx={{ minWidth: 0 }}>
-                        <Typography variant="caption" color="text.secondary" display="block">Paid</Typography>
-                        <Typography variant="body2" sx={{ wordBreak: 'break-word' }}>{formatCurrency(exp.paidAmountTotal)}</Typography>
-                      </Box>
-                      <Box sx={{ minWidth: 0 }}>
-                        <Typography variant="caption" color="text.secondary" display="block">Due</Typography>
-                        <Typography variant="body2" sx={{ wordBreak: 'break-word' }}>{formatCurrency(exp.dueAmount)}</Typography>
-                      </Box>
-                    </Box>
-                  </CardContent>
-                </Card>
-              ))}
-            </Stack>
+            /* Fixed Scrollable Outer Wrapper */
+  <Box
+    sx={{
+      mb: 2,
+      maxHeight: '60vh', // Sets height to max 60% of viewport
+      overflowY: 'auto', // Enforces vertical scrollbar when items grow
+      pr: 1, // Padding for scrollbar width
+      display: 'flex',
+      flexDirection: 'column',
+      gap: 1.5,
+      '&::-webkit-scrollbar': { width: 6 },
+      '&::-webkit-scrollbar-thumb': { backgroundColor: 'action.focus', borderRadius: 3 },
+    }}
+  >
+    {selectedVendor && getVendorExpenses(selectedVendor.vendor).map((exp) => (
+      <Card 
+        key={exp.id} 
+        variant="outlined" 
+        sx={{ flexShrink: 0, width: '100%' }} /* Fixes element squishing */
+      >
+        <CardContent sx={{ p: 2, '&:last-child': { pb: 2 } }}>
+          {/* Top Header: Date and Payment Status */}
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1, gap: 1 }}>
+            <Typography variant="body2" sx={{ fontWeight: 600, minWidth: 0 }}>
+              {exp.date}
+            </Typography>
+            <Chip
+              size="small"
+              label={exp.paymentStatus || 'Pending'}
+              color={exp.dueAmount <= 0.001 ? 'success' : (exp.paidAmountTotal > 0 ? 'warning' : 'default')}
+              sx={{ flexShrink: 0, height: 22, fontSize: '0.75rem' }}
+            />
+          </Box>
+
+          {/* Subtitle / Categories */}
+          <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 1.5 }}>
+            {exp.category}{exp.subCategory ? ` / ${exp.subCategory}` : ''}
+          </Typography>
+
+          {/* Vertical Key-Value Rows for Fields (No wrapping / no grid clipping) */}
+          <Stack spacing={0.75} sx={{ pt: 1, borderTop: 1, borderColor: 'divider' }}>
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <Typography variant="caption" color="text.secondary" sx={{ flexShrink: 0, mr: 1 }}>
+                Billed Amount
+              </Typography>
+              <Typography variant="body2" sx={{ fontWeight: 500, textAlign: 'right', whiteSpace: 'nowrap' }}>
+                {formatCurrency(exp.billedAmount)}
+              </Typography>
+            </Box>
+
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <Typography variant="caption" color="text.secondary" sx={{ flexShrink: 0, mr: 1 }}>
+                Paid Amount
+              </Typography>
+              <Typography variant="body2" color="success.main" sx={{ fontWeight: 500, textAlign: 'right', whiteSpace: 'nowrap' }}>
+                {formatCurrency(exp.paidAmountTotal)}
+              </Typography>
+            </Box>
+
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <Typography variant="caption" color="text.secondary" sx={{ flexShrink: 0, mr: 1 }}>
+                Due Amount
+              </Typography>
+              <Typography 
+                variant="body2" 
+                sx={{ 
+                  fontWeight: 600, 
+                  textAlign: 'right', 
+                  whiteSpace: 'nowrap',
+                  color: exp.dueAmount > 0.001 ? 'error.main' : 'text.primary'
+                }}
+              >
+                {formatCurrency(exp.dueAmount)}
+              </Typography>
+            </Box>
+          </Stack>
+        </CardContent>
+      </Card>
+    ))}
+  </Box>
           ) : (
             <TableContainer component={Paper} variant="outlined" sx={{ mb: 3, maxHeight: 300 }}>
               <Table size="small" stickyHeader>
